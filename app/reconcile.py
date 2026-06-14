@@ -47,6 +47,8 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
         if item.status in _CLOSED:
             prev = item.status
             item.status = "pending"
+            item.decided_by = None
+            item.decided_at = None
             record_event(db, item, actor="sync", event_type="regression_reopened",
                          from_status=prev, to_status="pending",
                          detail="drift reappeared after it was closed")

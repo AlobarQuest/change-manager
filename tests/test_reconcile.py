@@ -71,3 +71,14 @@ def test_absent_wontfix_is_not_resolved(db):
     s = reconcile(db, req([]))
     assert s.resolved == 0
     assert db.query(ChangeItem).one().status == "wontfix"
+
+
+def test_decided_by_cleared_on_reopen(db):
+    it = _item(db, "prod::572::db1", "done")
+    it.decided_by = "alice"
+    it.decided_at = NOW
+    db.commit()
+    reconcile(db, req([esc()]))
+    it = db.query(ChangeItem).one()
+    assert it.decided_by is None
+    assert it.decided_at is None
