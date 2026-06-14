@@ -11,6 +11,7 @@ from app.events import record_event
 from app.models import ChangeAttempt, ChangeItem, WindowRun
 from app.reconcile import reconcile
 from app.schemas import DecisionIn, OutcomeIn, SyncRequest, SyncSummary
+from app.transitions import TransitionError, decide as _do_decide, reactivate as _do_reactivate
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_m2m)])
 
@@ -101,13 +102,7 @@ def _decide(db: Session, item_id: int, body: DecisionIn, new_status: str, event_
     it = db.get(ChangeItem, item_id)
     if it is None:
         raise HTTPException(status_code=404, detail="not found")
-    prev = it.status
-    it.status = new_status
-    it.decided_by = body.actor
-    it.decided_at = datetime.now(timezone.utc)
-    record_event(db, it, actor=body.actor, event_type=event_type,
-                 from_status=prev, to_status=new_status, detail=body.detail)
-    db.commit()
+    _do_decide(db, it, actor=body.actor, new_status=new_status, event_type=event_type, detail=body.detail)
     return _item_dict(it)
 
 
@@ -131,9 +126,11 @@ def reactivate(item_id: int, body: DecisionIn, db: Session = Depends(get_db)) ->
     it = db.get(ChangeItem, item_id)
     if it is None:
         raise HTTPException(status_code=404, detail="not found")
-    if it.status != "wontfix":
-        raise HTTPException(status_code=409, detail=f"reactivate only from wontfix (status={it.status})")
-    return _decide(db, item_id, body, "pending", "reactivated")
+    try:
+        _do_reactivate(db, it, actor=body.actor, detail=body.detail)
+    except TransitionError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return _item_dict(it)
 
 
 class WindowStart(BaseModel):
