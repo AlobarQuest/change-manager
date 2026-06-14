@@ -28,3 +28,17 @@ def test_dashboard_lists_items(client):
     assert r.status_code == 200
     assert "app1" in r.text
     assert "needs https" in r.text
+
+
+def test_item_detail_shows_plan_and_history(client, db):
+    _seed(client)
+    iid = db.query(ChangeItem).one().id
+    r = client.get(f"/items/{iid}", headers=SSO)
+    assert r.status_code == 200
+    assert "needs https" in r.text          # reasoning
+    assert "ingested" in r.text             # the sync event in the history timeline
+
+
+def test_item_detail_404(client):
+    _seed(client)
+    assert client.get("/items/9999", headers=SSO).status_code == 404
