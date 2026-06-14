@@ -1,13 +1,14 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import require_m2m
 from app.db import get_db
 from app.events import record_event
-from app.models import ChangeAttempt, ChangeItem
+from app.models import ChangeAttempt, ChangeItem, WindowRun
 from app.reconcile import reconcile
 from app.schemas import DecisionIn, OutcomeIn, SyncRequest, SyncSummary
 
@@ -133,3 +134,46 @@ def reactivate(item_id: int, body: DecisionIn, db: Session = Depends(get_db)) ->
     if it.status != "wontfix":
         raise HTTPException(status_code=409, detail=f"reactivate only from wontfix (status={it.status})")
     return _decide(db, item_id, body, "pending", "reactivated")
+
+
+class WindowStart(BaseModel):
+    started_at: str  # ISO; stored as-is via fromisoformat
+
+
+class WindowPatch(BaseModel):
+    status: str | None = None
+    considered: int | None = None
+    applied: int | None = None
+    failed: int | None = None
+    blocked: int | None = None
+    skipped: int | None = None
+    report_md: str | None = None
+
+
+def _window_dict(w: WindowRun) -> dict:
+    return {"id": w.id, "status": w.status, "considered": w.considered, "applied": w.applied,
+            "failed": w.failed, "blocked": w.blocked, "skipped": w.skipped}
+
+
+@router.post("/window-runs")
+def create_window(body: WindowStart, db: Session = Depends(get_db)) -> dict:
+    started = datetime.fromisoformat(body.started_at.replace("Z", "+00:00"))
+    w = WindowRun(started_at=started, status="running")
+    db.add(w)
+    db.commit()
+    return _window_dict(w)
+
+
+@router.patch("/window-runs/{window_id}")
+def patch_window(window_id: int, body: WindowPatch, db: Session = Depends(get_db)) -> dict:
+    w = db.get(WindowRun, window_id)
+    if w is None:
+        raise HTTPException(status_code=404, detail="not found")
+    for field in ("status", "considered", "applied", "failed", "blocked", "skipped", "report_md"):
+        val = getattr(body, field)
+        if val is not None:
+            setattr(w, field, val)
+    if body.status in {"done", "error"}:
+        w.finished_at = datetime.now(timezone.utc)
+    db.commit()
+    return _window_dict(w)
