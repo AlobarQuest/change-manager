@@ -79,3 +79,16 @@ def test_reactivate_non_wontfix_is_409(client, db):
     _seed(client)
     iid = db.query(ChangeItem).one().id  # pending
     assert client.post(f"/items/{iid}/reactivate", headers=SSO).status_code == 409
+
+
+def test_windows_page_lists_runs(client, db):
+    _seed(client)
+    client.post("/api/window-runs", headers=APIH, json={"started_at": "2026-06-14T04:00:00Z"})
+    r = client.get("/windows", headers=SSO)
+    assert r.status_code == 200
+    assert "running" in r.text
+
+
+def test_windows_requires_sso(client):
+    _seed(client)
+    assert client.get("/windows").status_code == 401

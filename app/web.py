@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ChangeEvent, ChangeItem
+from app.models import ChangeEvent, ChangeItem, WindowRun
 from app.templates_env import templates
 from app.transitions import TransitionError, decide, reactivate as do_reactivate
 from app.web_auth import current_user
@@ -70,3 +70,9 @@ def item_action(
     else:
         raise HTTPException(status_code=400, detail=f"unknown action {action}")
     return templates.TemplateResponse(request, "_row.html", {"it": it, "user": user})
+
+
+@router.get("/windows")
+def windows(request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
+    runs = db.scalars(select(WindowRun).order_by(WindowRun.id.desc())).all()
+    return templates.TemplateResponse(request, "windows.html", {"runs": runs, "user": user})

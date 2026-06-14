@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="/">&larr; back</a></p>
+<h2>Window runs</h2>
+<table>
+  <thead><tr><th>Started</th><th>Finished</th><th>Status</th><th>Considered</th>
+             <th>Applied</th><th>Failed</th><th>Blocked</th><th>Skipped</th></tr></thead>
+  <tbody>
+    {% for w in runs %}
+    <tr><td>{{ w.started_at }}</td><td>{{ w.finished_at or "" }}</td>
+        <td><span class="badge">{{ w.status }}</span></td>
+        <td>{{ w.considered }}</td><td>{{ w.applied }}</td><td>{{ w.failed }}</td>
+        <td>{{ w.blocked }}</td><td>{{ w.skipped }}</td></tr>
+    {% endfor %}
+    {% if not runs %}<tr><td colspan="8"><em>no runs yet</em></td></tr>{% endif %}
+  </tbody>
+</table>
+{% endblock %}
