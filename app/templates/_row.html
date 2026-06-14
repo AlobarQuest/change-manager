@@ -1,0 +1,17 @@
+<tr id="item-{{ it.id }}">
+  <td>{{ it.instance }}</td>
+  <td><a href="/items/{{ it.id }}">{{ it.resource_name }}</a></td>
+  <td>{{ it.rule_key }}</td>
+  <td>{{ it.reasoning }}</td>
+  <td><span class="badge">{{ it.risk }}</span></td>
+  <td><span class="badge">{{ it.status }}</span></td>
+  <td>
+    {% if it.status in ["pending", "deferred"] %}
+      <button hx-post="/items/{{ it.id }}/approve" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Approve</button>
+      <button hx-post="/items/{{ it.id }}/defer"   hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Defer</button>
+      <button hx-post="/items/{{ it.id }}/wontfix" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Won't-fix</button>
+    {% elif it.status == "wontfix" %}
+      <button hx-post="/items/{{ it.id }}/reactivate" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Reactivate</button>
+    {% endif %}
+  </td>
+</tr>

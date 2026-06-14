@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="tabs">
+  {% for t in ["pending","approved","blocked","done","wontfix","resolved","all"] %}
+    <a href="/?status={{ t }}" class="{{ 'active' if t == current_status else '' }}">{{ t }}</a>
+  {% endfor %}
+</p>
+<table>
+  <thead><tr><th>Instance</th><th>Resource</th><th>Rule</th><th>Reasoning</th><th>Risk</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody>
+    {% for it in items %}{% include "_row.html" %}{% endfor %}
+    {% if not items %}<tr><td colspan="6"><em>nothing here</em></td></tr>{% endif %}
+  </tbody>
+</table>
+{% endblock %}
