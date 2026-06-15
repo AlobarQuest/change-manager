@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -23,6 +23,12 @@ class ChangeItem(Base):
     plan: Mapped[dict] = mapped_column(JSON, nullable=False)
     note: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending", index=True)
+    # Pipeline source ("drift" = Coolify drift audit, "security" = machine security-scan).
+    # Reconcile resolves stale items SCOPED to source so the two pipelines don't clobber
+    # each other's queues.
+    source: Mapped[str] = mapped_column(String, nullable=False, default="drift", server_default="drift", index=True)
+    # Urgent lane: time-sensitive security findings surface first in the GUI.
+    urgent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false", index=True)
     decided_by: Mapped[str | None] = mapped_column(String)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

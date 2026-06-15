@@ -22,6 +22,7 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
         rule_key = rule_key_of(e.proposal_id)
         identity = stable_identity(e.instance, rule_key, e.target.uuid)
         seen_identities.add(identity)
+        urgent = e.urgent or e.reasoning.startswith("[URGENT]")
 
         item = db.scalar(select(ChangeItem).where(ChangeItem.identity == identity))
         if item is None:
@@ -31,7 +32,7 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
                 resource_uuid=e.target.uuid, resource_name=e.target.name,
                 risk=e.risk, kind=e.kind, reasoning=e.reasoning, plan=e.plan, note=e.note,
                 status="pending", first_seen_at=now, last_seen_at=now,
-                source_report=req.source_report,
+                source_report=req.source_report, source=req.source, urgent=urgent,
             )
             db.add(item)
             db.flush()
@@ -40,9 +41,10 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
             new += 1
             continue
 
-        # Existing: always refresh the latest plan/note/last_seen/source.
+        # Existing: always refresh the latest plan/note/last_seen/source/urgent.
         item.plan, item.note = e.plan, e.note
         item.last_seen_at, item.source_report = now, req.source_report
+        item.source, item.urgent = req.source, urgent
 
         if item.status in _CLOSED:
             prev = item.status
@@ -57,8 +59,13 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
             refreshed += 1  # pending/approved/deferred/blocked/failed/wontfix/in_progress: decision stands
 
     # Items in the queue but NOT in this report → resolved (drift cleared), except wontfix.
+    # SCOPED to this sync's source: a security sync must not resolve drift items, and
+    # vice-versa — otherwise the two pipelines clobber each other's queues.
     open_items = db.scalars(
-        select(ChangeItem).where(ChangeItem.status.notin_(["resolved", "wontfix"]))
+        select(ChangeItem).where(
+            ChangeItem.status.notin_(["resolved", "wontfix"]),
+            ChangeItem.source == req.source,
+        )
     ).all()
     for item in open_items:
         if item.identity not in seen_identities:

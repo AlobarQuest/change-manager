@@ -19,12 +19,16 @@ class EscalationIn(BaseModel):
     reasoning: str
     plan: dict[str, Any]
     note: str | None = None
+    urgent: bool = False
 
 
 class SyncRequest(BaseModel):
     generated_at: str
     source_report: str
     escalations: list[EscalationIn]
+    # Pipeline source for this batch; reconcile scopes its "resolve absent items" pass
+    # to this source. Defaults to "drift" for the existing Coolify pipeline.
+    source: str = "drift"
 
 
 class SyncSummary(BaseModel):

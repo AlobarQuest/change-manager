@@ -22,7 +22,7 @@ def _item_dict(it: ChangeItem) -> dict:
         "resource_type": it.resource_type, "resource_uuid": it.resource_uuid,
         "resource_name": it.resource_name, "risk": it.risk, "kind": it.kind,
         "reasoning": it.reasoning, "plan": it.plan, "note": it.note, "status": it.status,
-        "decided_by": it.decided_by,
+        "source": it.source, "urgent": it.urgent, "decided_by": it.decided_by,
     }
 
 
@@ -35,6 +35,7 @@ def sync(req: SyncRequest, db: Session = Depends(get_db)) -> SyncSummary:
 def list_items(
     status: str | None = Query(default=None),
     instance: str | None = Query(default=None),
+    source: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> list[dict]:
     stmt = select(ChangeItem)
@@ -42,6 +43,8 @@ def list_items(
         stmt = stmt.where(ChangeItem.status == status)
     if instance:
         stmt = stmt.where(ChangeItem.instance == instance)
+    if source:
+        stmt = stmt.where(ChangeItem.source == source)
     return [_item_dict(it) for it in db.scalars(stmt.order_by(ChangeItem.id)).all()]
 
 

@@ -1,5 +1,9 @@
 <tr id="item-{{ it.id }}">
-  <td>{{ it.instance }}</td>
+  <td>
+    {% if it.urgent %}<span class="badge" style="background:#c00;color:#fff">URGENT</span> {% endif %}
+    {% if it.source and it.source != "drift" %}<span class="badge">{{ it.source }}</span> {% endif %}
+    {{ it.instance }}
+  </td>
   <td><a href="/items/{{ it.id }}">{{ it.resource_name }}</a></td>
   <td>{{ it.rule_key }}</td>
   <td>{{ it.reasoning }}</td>

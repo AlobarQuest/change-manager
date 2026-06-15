@@ -18,7 +18,8 @@ def dashboard(
     user: str = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    stmt = select(ChangeItem).order_by(ChangeItem.id)
+    # Urgent (security) items sort first, then by id.
+    stmt = select(ChangeItem).order_by(ChangeItem.urgent.desc(), ChangeItem.id)
     if status != "all":
         stmt = stmt.where(ChangeItem.status == status)
     items = db.scalars(stmt).all()

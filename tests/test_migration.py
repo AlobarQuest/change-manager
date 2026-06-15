@@ -24,3 +24,8 @@ def test_alembic_upgrade_head_builds_schema():
             .fetchall()
         }
         assert {"change_items", "change_attempts", "change_events", "window_runs"} <= names
+        cols = {
+            r[1]
+            for r in sqlite3.connect(db).execute("pragma table_info(change_items)").fetchall()
+        }
+        assert {"source", "urgent"} <= cols
