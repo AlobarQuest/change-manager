@@ -51,6 +51,11 @@ def build_deploykey_sync() -> SyncRequest:
 
 
 def main() -> None:
+    if RESOURCE_UUID == "DEPLOY_KEY_UUID_FROM_AUDIT_LOG":
+        raise RuntimeError(
+            "Substitute RESOURCE_UUID/RESOURCE_NAME with the real deploy key identifiers "
+            "(from ~/.claude/audit/high-power-actions.jsonl) before running the prod seed."
+        )
     base = os.environ["CHANGE_MGR_API_BASE"].rstrip("/")
     token = os.environ["CHANGE_MGR_M2M_TOKEN"]
     body = build_deploykey_sync().model_dump_json().encode()
