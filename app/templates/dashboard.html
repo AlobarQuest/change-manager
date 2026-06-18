@@ -2,7 +2,13 @@
 {% block content %}
 <p class="tabs">
   {% for t in ["pending","approved","blocked","done","wontfix","resolved","all"] %}
-    <a href="/?status={{ t }}" class="{{ 'active' if t == current_status else '' }}">{{ t }}</a>
+    <a href="/?status={{ t }}&source={{ current_source }}" class="{{ 'active' if t == current_status else '' }}">{{ t }}</a>
+  {% endfor %}
+</p>
+<p class="tabs">
+  source:
+  {% for s in ["all","drift","security","rotation"] %}
+    <a href="/?source={{ s }}&status={{ current_status }}" class="{{ 'active' if s == current_source else '' }}">{{ s }}</a>
   {% endfor %}
 </p>
 <table>

@@ -15,6 +15,7 @@ router = APIRouter()
 def dashboard(
     request: Request,
     status: str = Query(default="pending"),
+    source: str = Query(default="all"),
     user: str = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -22,10 +23,12 @@ def dashboard(
     stmt = select(ChangeItem).order_by(ChangeItem.urgent.desc(), ChangeItem.id)
     if status != "all":
         stmt = stmt.where(ChangeItem.status == status)
+    if source != "all":
+        stmt = stmt.where(ChangeItem.source == source)
     items = db.scalars(stmt).all()
     return templates.TemplateResponse(
         request, "dashboard.html",
-        {"items": items, "current_status": status, "user": user},
+        {"items": items, "current_status": status, "current_source": source, "user": user},
     )
 
 

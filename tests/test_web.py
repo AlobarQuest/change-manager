@@ -92,3 +92,30 @@ def test_windows_page_lists_runs(client, db):
 def test_windows_requires_sso(client):
     _seed(client)
     assert client.get("/windows").status_code == 401
+
+
+ROT_ESC = {
+    "proposal_id": "rotation:dk1", "instance": "prod",
+    "target": {"provider": "coolify", "resource_type": "application", "uuid": "dk1", "name": "bookingapp"},
+    "risk": "caution", "kind": "question",
+    "reasoning": "deploy key exposed via coolify_get_deployment (pre-redaction)",
+    "plan": {"steps": ["rotate"]}, "note": None,
+}
+ROT_BODY = {"generated_at": "t", "source_report": "rotation-scan.json", "escalations": [ROT_ESC], "source": "rotation"}
+
+
+def test_dashboard_source_filter(client):
+    import app.auth as auth
+    import app.web_auth as wa
+    auth.settings.m2m_token = "t"
+    wa.settings.dev_user = ""
+    client.post("/api/sync", json=BODY, headers=APIH)       # a drift item ("app1")
+    client.post("/api/sync", json=ROT_BODY, headers=APIH)   # a rotation item ("bookingapp")
+
+    r = client.get("/?source=rotation", headers=SSO)
+    assert r.status_code == 200
+    assert "bookingapp" in r.text
+    assert "app1" not in r.text                              # drift filtered out
+
+    r_all = client.get("/?source=all", headers=SSO)
+    assert "bookingapp" in r_all.text and "app1" in r_all.text
