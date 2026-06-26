@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import ChangeEvent, ChangeItem, WindowRun
 from app.templates_env import templates
-from app.transitions import TransitionError, decide, reactivate as do_reactivate
+from app.transitions import TransitionError, decide, hand_off, reactivate as do_reactivate
 from app.web_auth import current_user
 
 router = APIRouter()
@@ -66,6 +66,11 @@ def item_action(
     if action == "reactivate":
         try:
             do_reactivate(db, it, actor=user)
+        except TransitionError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+    elif action == "handoff":
+        try:
+            hand_off(db, it, actor=user)
         except TransitionError as e:
             raise HTTPException(status_code=409, detail=str(e))
     elif action in _ACTIONS:
