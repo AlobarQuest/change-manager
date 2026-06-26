@@ -17,5 +17,8 @@
     {% elif it.status == "wontfix" %}
       <button hx-post="/items/{{ it.id }}/reactivate" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Reactivate</button>
     {% endif %}
+    {% if it.status in ["pending", "blocked"] and it.handoff_brief %}
+      <button hx-post="/items/{{ it.id }}/handoff" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Hand off</button>
+    {% endif %}
   </td>
 </tr>

@@ -6,6 +6,15 @@
    &middot; <strong>Risk:</strong> {{ it.risk }} &middot; <strong>Kind:</strong> {{ it.kind }}</p>
 <p><strong>Why:</strong> {{ it.reasoning }}</p>
 {% if it.note %}<p><strong>Auto-fix held:</strong> {{ it.note }}</p>{% endif %}
+{% if it.handoff_brief %}
+<h3>Handoff brief</h3>
+{% if it.status in ["pending", "blocked"] %}
+<form method="post" action="/items/{{ it.id }}/handoff">
+  <button type="submit">Hand off</button>
+</form>
+{% endif %}
+<pre style="white-space:pre-wrap;border:1px solid #ccc;padding:8px">{{ it.handoff_brief }}</pre>
+{% endif %}
 
 <h3>Plan</h3>
 <p><strong>Root cause:</strong> {{ it.plan.get("root_cause", "—") }}</p>

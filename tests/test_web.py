@@ -50,7 +50,7 @@ from app.models import ChangeEvent
 def test_approve_action_transitions_and_records_sso_user(client, db):
     _seed(client)
     iid = db.query(ChangeItem).one().id
-    r = client.post(f"/items/{iid}/approve", headers=SSO)
+    r = client.post(f"/items/{iid}/approve", headers={**SSO, "HX-Request": "true"})
     assert r.status_code == 200
     assert f'id="item-{iid}"' in r.text              # returns the swapped row fragment
     it = db.get(ChangeItem, iid)
@@ -62,9 +62,9 @@ def test_approve_action_transitions_and_records_sso_user(client, db):
 def test_wontfix_then_reactivate_via_gui(client, db):
     _seed(client)
     iid = db.query(ChangeItem).one().id
-    client.post(f"/items/{iid}/wontfix", headers=SSO)
+    client.post(f"/items/{iid}/wontfix", headers={**SSO, "HX-Request": "true"})
     assert db.get(ChangeItem, iid).status == "wontfix"
-    r = client.post(f"/items/{iid}/reactivate", headers=SSO)
+    r = client.post(f"/items/{iid}/reactivate", headers={**SSO, "HX-Request": "true"})
     assert r.status_code == 200
     assert db.get(ChangeItem, iid).status == "pending"
 

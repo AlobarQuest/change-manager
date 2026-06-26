@@ -3,10 +3,12 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.events import record_event
 from app.identity import rule_key_of, stable_identity
 from app.models import ChangeItem
 from app.schemas import SyncRequest, SyncSummary
+from app.watchdog import revert_stale_handoffs
 
 # Statuses that mean "this drift is settled / closed" and should reopen if it reappears.
 _CLOSED = {"done", "resolved"}
@@ -31,6 +33,7 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
                 provider=e.target.provider, resource_type=e.target.resource_type,
                 resource_uuid=e.target.uuid, resource_name=e.target.name,
                 risk=e.risk, kind=e.kind, reasoning=e.reasoning, plan=e.plan, note=e.note,
+                handoff_brief=e.handoff_brief,
                 status="pending", first_seen_at=now, last_seen_at=now,
                 source_report=req.source_report, source=req.source, urgent=urgent,
             )
@@ -43,6 +46,7 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
 
         # Existing: always refresh the latest plan/note/last_seen/source/urgent.
         item.plan, item.note = e.plan, e.note
+        item.handoff_brief = e.handoff_brief
         item.last_seen_at, item.source_report = now, req.source_report
         item.source, item.urgent = req.source, urgent
 
@@ -57,6 +61,11 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
             reopened += 1
         else:
             refreshed += 1  # pending/approved/deferred/blocked/failed/wontfix/in_progress: decision stands
+
+    # Watchdog (reuses this scheduled sync execution; no new scheduler): stale, still-flagged
+    # handed_off items revert to pending so a forgotten handoff resurfaces.
+    revert_stale_handoffs(db, now=now, source=req.source, seen_identities=seen_identities,
+                          max_age_days=settings.handoff_watchdog_days)
 
     # Items in the queue but NOT in this report → resolved (drift cleared), except wontfix.
     # SCOPED to this sync's source: a security sync must not resolve drift items, and

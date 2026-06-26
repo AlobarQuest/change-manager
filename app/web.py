@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import ChangeEvent, ChangeItem, WindowRun
 from app.templates_env import templates
-from app.transitions import TransitionError, decide, reactivate as do_reactivate
+from app.transitions import TransitionError, decide, hand_off, reactivate as do_reactivate
 from app.web_auth import current_user
 
 router = APIRouter()
@@ -68,12 +69,19 @@ def item_action(
             do_reactivate(db, it, actor=user)
         except TransitionError as e:
             raise HTTPException(status_code=409, detail=str(e))
+    elif action == "handoff":
+        try:
+            hand_off(db, it, actor=user)
+        except TransitionError as e:
+            raise HTTPException(status_code=409, detail=str(e))
     elif action in _ACTIONS:
         new_status, event_type = _ACTIONS[action]
         decide(db, it, actor=user, new_status=new_status, event_type=event_type)
     else:
         raise HTTPException(status_code=400, detail=f"unknown action {action}")
-    return templates.TemplateResponse(request, "_row.html", {"it": it, "user": user})
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(request, "_row.html", {"it": it, "user": user})
+    return RedirectResponse(url=f"/items/{item_id}", status_code=303)
 
 
 @router.get("/windows")

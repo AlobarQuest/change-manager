@@ -20,6 +20,8 @@ class EscalationIn(BaseModel):
     plan: dict[str, Any]
     note: str | None = None
     urgent: bool = False
+    lane: str = "infra-config"  # "infra-config" | "app-conformance"; default keeps legacy payloads valid
+    handoff_brief: str | None = None  # markdown build brief; present only for app-conformance
 
 
 class SyncRequest(BaseModel):

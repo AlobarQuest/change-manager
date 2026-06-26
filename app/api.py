@@ -11,7 +11,7 @@ from app.events import record_event
 from app.models import ChangeAttempt, ChangeItem, WindowRun
 from app.reconcile import reconcile
 from app.schemas import DecisionIn, OutcomeIn, SyncRequest, SyncSummary
-from app.transitions import TransitionError, decide as _do_decide, reactivate as _do_reactivate
+from app.transitions import TransitionError, decide as _do_decide, hand_off as _do_hand_off, reactivate as _do_reactivate
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_m2m)])
 
@@ -23,6 +23,8 @@ def _item_dict(it: ChangeItem) -> dict:
         "resource_name": it.resource_name, "risk": it.risk, "kind": it.kind,
         "reasoning": it.reasoning, "plan": it.plan, "note": it.note, "status": it.status,
         "source": it.source, "urgent": it.urgent, "decided_by": it.decided_by,
+        "handoff_brief": it.handoff_brief,
+        "handed_off_at": it.handed_off_at.isoformat() if it.handed_off_at else None,
     }
 
 
@@ -131,6 +133,18 @@ def reactivate(item_id: int, body: DecisionIn, db: Session = Depends(get_db)) ->
         raise HTTPException(status_code=404, detail="not found")
     try:
         _do_reactivate(db, it, actor=body.actor, detail=body.detail)
+    except TransitionError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return _item_dict(it)
+
+
+@router.post("/items/{item_id}/handoff")
+def handoff(item_id: int, body: DecisionIn, db: Session = Depends(get_db)) -> dict:
+    it = db.get(ChangeItem, item_id)
+    if it is None:
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        _do_hand_off(db, it, actor=body.actor, detail=body.detail)
     except TransitionError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return _item_dict(it)
