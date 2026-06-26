@@ -22,6 +22,7 @@ class EscalationIn(BaseModel):
     urgent: bool = False
     lane: str = "infra-config"  # "infra-config" | "app-conformance"; default keeps legacy payloads valid
     handoff_brief: str | None = None  # markdown build brief; present only for app-conformance
+    handoff: dict[str, Any] | None = None  # structured handoff package (single source of truth)
 
 
 class SyncRequest(BaseModel):

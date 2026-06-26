@@ -7,13 +7,15 @@
 <p><strong>Why:</strong> {{ it.reasoning }}</p>
 {% if it.note %}<p><strong>Auto-fix held:</strong> {{ it.note }}</p>{% endif %}
 {% if it.handoff_brief %}
-<h3>Handoff brief</h3>
+<h3>Handoff brief <span class="badge">{{ it.lane }}</span></h3>
 {% if it.status in ["pending", "blocked"] %}
-<form method="post" action="/items/{{ it.id }}/handoff">
-  <button type="submit">Hand off</button>
-</form>
+<form method="post" action="/items/{{ it.id }}/handoff"><button type="submit">Hand off</button></form>
 {% endif %}
-<pre style="white-space:pre-wrap;border:1px solid #ccc;padding:8px">{{ it.handoff_brief }}</pre>
+<button type="button" onclick="navigator.clipboard.writeText(document.getElementById('brief-{{ it.id }}').innerText)">Copy brief</button>
+<pre id="brief-{{ it.id }}" style="white-space:pre-wrap;border:1px solid #ccc;padding:8px">{{ it.handoff_brief }}</pre>
+{% if it.pr_url %}<p><strong>PR:</strong> <a href="{{ it.pr_url }}">{{ it.pr_url }}</a></p>{% endif %}
+<!-- DISPATCH SEAM (Phase 2): a future "Dispatch to build agent" control posts to /items/{{ it.id }}/dispatch here.
+     Phase 1 is human-only — copy the brief above into a build agent manually. Do NOT auto-spawn an agent. -->
 {% endif %}
 
 <h3>Plan</h3>
