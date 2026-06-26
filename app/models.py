@@ -34,6 +34,8 @@ class ChangeItem(Base):
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     source_report: Mapped[str | None] = mapped_column(String)
+    handoff_brief: Mapped[str | None] = mapped_column(Text)
+    handed_off_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ChangeAttempt(Base):
