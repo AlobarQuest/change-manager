@@ -31,6 +31,7 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
                 provider=e.target.provider, resource_type=e.target.resource_type,
                 resource_uuid=e.target.uuid, resource_name=e.target.name,
                 risk=e.risk, kind=e.kind, reasoning=e.reasoning, plan=e.plan, note=e.note,
+                handoff_brief=e.handoff_brief,
                 status="pending", first_seen_at=now, last_seen_at=now,
                 source_report=req.source_report, source=req.source, urgent=urgent,
             )
@@ -43,6 +44,7 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
 
         # Existing: always refresh the latest plan/note/last_seen/source/urgent.
         item.plan, item.note = e.plan, e.note
+        item.handoff_brief = e.handoff_brief
         item.last_seen_at, item.source_report = now, req.source_report
         item.source, item.urgent = req.source, urgent
 
