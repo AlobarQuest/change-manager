@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <p class="tabs">
-  {% for t in ["pending","approved","blocked","done","wontfix","resolved","all"] %}
+  {% for t in ["pending","approved","blocked","handed_off","done","wontfix","resolved","all"] %}
     <a href="/?status={{ t }}&source={{ current_source }}" class="{{ 'active' if t == current_status else '' }}">{{ t }}</a>
   {% endfor %}
 </p>
