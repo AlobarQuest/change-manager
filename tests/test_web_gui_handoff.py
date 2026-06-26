@@ -46,3 +46,23 @@ def test_detail_renders_brief(client, db):
     r = client.get(f"/items/{it.id}")
     assert "Handoff brief" in r.text
     assert "Do the thing" in r.text
+
+
+def test_detail_handoff_plain_post_redirects(client, db):
+    """Plain (non-HTMX) POST from the detail page must redirect 303 → /items/{id}."""
+    it = _item(db, status="pending")
+    r = client.post(f"/items/{it.id}/handoff", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/items/{it.id}"
+    db.refresh(it)
+    assert it.status == "handed_off"
+
+
+def test_detail_handoff_htmx_post_returns_row_partial(client, db):
+    """HTMX POST (HX-Request header) must still return the <tr> row partial (200)."""
+    it = _item(db, status="pending")
+    r = client.post(f"/items/{it.id}/handoff", headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    assert f'id="item-{it.id}"' in r.text
+    db.refresh(it)
+    assert it.status == "handed_off"

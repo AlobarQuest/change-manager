@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -78,7 +79,9 @@ def item_action(
         decide(db, it, actor=user, new_status=new_status, event_type=event_type)
     else:
         raise HTTPException(status_code=400, detail=f"unknown action {action}")
-    return templates.TemplateResponse(request, "_row.html", {"it": it, "user": user})
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(request, "_row.html", {"it": it, "user": user})
+    return RedirectResponse(url=f"/items/{item_id}", status_code=303)
 
 
 @router.get("/windows")

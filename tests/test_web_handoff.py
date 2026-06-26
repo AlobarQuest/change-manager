@@ -18,7 +18,7 @@ def _item(db, status="pending"):
 def test_web_handoff_action(client, db):
     wa.settings.dev_user = ""
     it = _item(db)
-    r = client.post(f"/items/{it.id}/handoff", headers=SSO)
+    r = client.post(f"/items/{it.id}/handoff", headers={**SSO, "HX-Request": "true"})
     assert r.status_code == 200
     db.refresh(it)
     assert it.status == "handed_off"

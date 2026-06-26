@@ -9,7 +9,7 @@
 {% if it.handoff_brief %}
 <h3>Handoff brief</h3>
 {% if it.status in ["pending", "blocked"] %}
-<form hx-post="/items/{{ it.id }}/handoff" hx-target="body">
+<form method="post" action="/items/{{ it.id }}/handoff">
   <button type="submit">Hand off</button>
 </form>
 {% endif %}
