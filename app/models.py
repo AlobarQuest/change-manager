@@ -36,6 +36,9 @@ class ChangeItem(Base):
     source_report: Mapped[str | None] = mapped_column(String)
     handoff_brief: Mapped[str | None] = mapped_column(Text)
     handed_off_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lane: Mapped[str] = mapped_column(String, nullable=False, default="infra-config", server_default="infra-config", index=True)
+    handoff: Mapped[dict | None] = mapped_column(JSON)
+    pr_url: Mapped[str | None] = mapped_column(String)
 
 
 class ChangeAttempt(Base):
