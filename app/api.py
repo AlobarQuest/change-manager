@@ -25,6 +25,7 @@ def _item_dict(it: ChangeItem) -> dict:
         "source": it.source, "urgent": it.urgent, "decided_by": it.decided_by,
         "handoff_brief": it.handoff_brief,
         "handed_off_at": it.handed_off_at.isoformat() if it.handed_off_at else None,
+        "lane": it.lane, "handoff": it.handoff, "pr_url": it.pr_url,
     }
 
 
@@ -38,6 +39,7 @@ def list_items(
     status: str | None = Query(default=None),
     instance: str | None = Query(default=None),
     source: str | None = Query(default=None),
+    lane: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> list[dict]:
     stmt = select(ChangeItem)
@@ -47,6 +49,8 @@ def list_items(
         stmt = stmt.where(ChangeItem.instance == instance)
     if source:
         stmt = stmt.where(ChangeItem.source == source)
+    if lane:
+        stmt = stmt.where(ChangeItem.lane == lane)
     return [_item_dict(it) for it in db.scalars(stmt.order_by(ChangeItem.id)).all()]
 
 
@@ -147,6 +151,31 @@ def handoff(item_id: int, body: DecisionIn, db: Session = Depends(get_db)) -> di
         _do_hand_off(db, it, actor=body.actor, detail=body.detail)
     except TransitionError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    return _item_dict(it)
+
+
+@router.get("/items/{item_id}/handoff")
+def get_handoff(item_id: int, db: Session = Depends(get_db)) -> dict:
+    it = db.get(ChangeItem, item_id)
+    if it is None or not it.handoff:
+        raise HTTPException(status_code=404, detail="no handoff for this item")
+    return {"item_id": it.id, **it.handoff, "pr_url": it.pr_url}
+
+
+class ItemPatch(BaseModel):
+    pr_url: str | None = None
+
+
+@router.patch("/items/{item_id}")
+def patch_item(item_id: int, body: ItemPatch, db: Session = Depends(get_db)) -> dict:
+    it = db.get(ChangeItem, item_id)
+    if it is None:
+        raise HTTPException(status_code=404, detail="not found")
+    if body.pr_url is not None:
+        it.pr_url = body.pr_url
+        record_event(db, it, actor="api", event_type="pr_linked",
+                     detail=f"PR linked: {body.pr_url}")
+    db.commit()
     return _item_dict(it)
 
 
