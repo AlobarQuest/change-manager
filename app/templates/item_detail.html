@@ -6,6 +6,14 @@
    &middot; <strong>Risk:</strong> {{ it.risk }} &middot; <strong>Kind:</strong> {{ it.kind }}</p>
 <p><strong>Why:</strong> {{ it.reasoning }}</p>
 {% if it.note %}<p><strong>Auto-fix held:</strong> {{ it.note }}</p>{% endif %}
+{% if it.status == "blocked" %}
+{# Human-terminal actions so a blocked item is never a dead-end. NOT approve —
+   that would re-queue the executor that already blocked it. #}
+<p>
+  <form method="post" action="/items/{{ it.id }}/resolve" style="display:inline"><button type="submit">Resolve</button></form>
+  <form method="post" action="/items/{{ it.id }}/wontfix" style="display:inline"><button type="submit">Won't-fix</button></form>
+</p>
+{% endif %}
 {% if it.handoff_brief %}
 <h3>Handoff brief <span class="badge">{{ it.lane }}</span></h3>
 {% if it.status in ["pending", "blocked"] %}
