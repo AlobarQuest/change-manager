@@ -53,6 +53,7 @@ _ACTIONS = {  # gui action → (new_status, event_type)
     "approve": ("approved", "approved"),
     "defer": ("deferred", "deferred"),
     "wontfix": ("wontfix", "wontfixed"),
+    "resolve": ("resolved", "resolved"),  # human "mark done": handled out-of-band, close it
 }
 
 

@@ -14,6 +14,10 @@
       <button hx-post="/items/{{ it.id }}/approve" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Approve</button>
       <button hx-post="/items/{{ it.id }}/defer"   hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Defer</button>
       <button hx-post="/items/{{ it.id }}/wontfix" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Won't-fix</button>
+    {% elif it.status == "blocked" %}
+      {# Human-terminal only: NOT approve (would re-queue the executor that blocked it). #}
+      <button hx-post="/items/{{ it.id }}/resolve" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Resolve</button>
+      <button hx-post="/items/{{ it.id }}/wontfix" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Won't-fix</button>
     {% elif it.status == "wontfix" %}
       <button hx-post="/items/{{ it.id }}/reactivate" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Reactivate</button>
     {% endif %}

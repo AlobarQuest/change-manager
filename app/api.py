@@ -130,6 +130,13 @@ def wontfix(item_id: int, body: DecisionIn, db: Session = Depends(get_db)) -> di
     return _decide(db, item_id, body, "wontfix", "wontfixed")
 
 
+@router.post("/items/{item_id}/resolve")
+def resolve(item_id: int, body: DecisionIn, db: Session = Depends(get_db)) -> dict:
+    # Human "mark done": this was handled/completed out-of-band; close it.
+    # Distinct from wontfix (accepted risk). reconcile treats `resolved` as terminal.
+    return _decide(db, item_id, body, "resolved", "resolved")
+
+
 @router.post("/items/{item_id}/reactivate")
 def reactivate(item_id: int, body: DecisionIn, db: Session = Depends(get_db)) -> dict:
     it = db.get(ChangeItem, item_id)
