@@ -14,7 +14,7 @@ HANDOFF = {
 }
 
 
-def _esc(lane="app-conformance", handoff=HANDOFF, brief="# brief"):
+def _esc(lane="app-conformance", handoff=HANDOFF, brief: str | None = "# brief"):
     return EscalationIn(
         proposal_id="coolify.enable_healthcheck:app1",
         instance="prod",

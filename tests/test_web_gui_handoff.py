@@ -13,7 +13,7 @@ def teardown_module(module):
     wa.settings.dev_user = ""
 
 
-def _item(db, status="pending", brief="# Handoff brief\nDo the thing"):
+def _item(db, status="pending", brief: str | None = "# Handoff brief\nDo the thing"):
     it = ChangeItem(
         identity=f"prod::hc::{status}",
         instance="prod",
