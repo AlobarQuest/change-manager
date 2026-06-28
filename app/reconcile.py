@@ -87,9 +87,8 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
             )
             reopened += 1
         else:
-            refreshed += (
-                1  # pending/approved/deferred/blocked/failed/wontfix/in_progress: decision stands
-            )
+            # pending/approved/deferred/blocked/failed/wontfix/in_progress: decision stands
+            refreshed += 1
 
     # Watchdog (reuses this scheduled sync execution; no new scheduler): stale, still-flagged
     # handed_off items revert to pending so a forgotten handoff resurfaces.
