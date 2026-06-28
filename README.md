@@ -9,10 +9,9 @@ GUI + SSO land in plan 2b; deploy in plan 2c.
 
 ## Dev
 
-    python3 -m venv .venv && source .venv/bin/activate
-    pip install -e ".[dev]"
-    pytest                                  # run tests (SQLite in-memory)
-    uvicorn app.main:app --reload           # run locally
+    uv sync                                 # installs app + dev toolchain (dependency-groups: dev)
+    uv run pytest                           # run tests (SQLite in-memory)
+    uv run uvicorn app.main:app --reload    # run locally
 
 ## Config (env / .env)
 

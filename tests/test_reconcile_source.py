@@ -1,10 +1,10 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.models import ChangeItem
 from app.reconcile import reconcile
 from app.schemas import EscalationIn, SyncRequest
 
-NOW = datetime(2026, 6, 15, 3, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 6, 15, 3, 0, tzinfo=UTC)
 
 
 def drift_esc(uuid="db1", rule="572"):

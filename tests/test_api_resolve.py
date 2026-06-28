@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import app.auth as auth
 from app.models import ChangeEvent, ChangeItem
@@ -13,7 +13,7 @@ def _blocked(db) -> int:
         identity="prod::rotation::vt1", instance="prod", rule_key="rotation.secret",
         resource_uuid="vt1", resource_name="veritok", risk="caution", kind="question",
         reasoning="secret exposed", plan={}, status="blocked",
-        first_seen_at=datetime.now(timezone.utc), last_seen_at=datetime.now(timezone.utc),
+        first_seen_at=datetime.now(UTC), last_seen_at=datetime.now(UTC),
     )
     db.add(it)
     db.commit()

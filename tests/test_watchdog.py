@@ -1,10 +1,11 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+
 from app.models import ChangeEvent, ChangeItem
 from app.watchdog import revert_stale_handoffs
 
 
 def _item(db, *, identity, handed_days_ago, status="handed_off", source="drift"):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     it = ChangeItem(identity=identity, instance="prod", rule_key="coolify.enable_healthcheck",
                     resource_uuid=identity, resource_name="o/app1:main", risk="safe", kind="remediation",
                     reasoning="r", plan={"steps": []}, status=status, source=source,
@@ -15,7 +16,7 @@ def _item(db, *, identity, handed_days_ago, status="handed_off", source="drift")
 
 def test_stale_present_handoff_reverts_to_pending(db):
     it = _item(db, identity="i1", handed_days_ago=10)
-    n = revert_stale_handoffs(db, now=datetime.now(timezone.utc), source="drift",
+    n = revert_stale_handoffs(db, now=datetime.now(UTC), source="drift",
                               seen_identities={"i1"}, max_age_days=7)
     db.refresh(it)
     assert n == 1 and it.status == "pending"
@@ -27,7 +28,7 @@ def test_stale_present_handoff_reverts_to_pending(db):
 
 def test_fresh_handoff_is_left_alone(db):
     it = _item(db, identity="i2", handed_days_ago=2)
-    n = revert_stale_handoffs(db, now=datetime.now(timezone.utc), source="drift",
+    n = revert_stale_handoffs(db, now=datetime.now(UTC), source="drift",
                               seen_identities={"i2"}, max_age_days=7)
     db.refresh(it)
     assert n == 0 and it.status == "handed_off"
@@ -36,7 +37,7 @@ def test_fresh_handoff_is_left_alone(db):
 def test_stale_but_absent_is_not_reverted(db):
     # absent (not in seen_identities) → reconcile's resolve pass owns it, watchdog skips
     it = _item(db, identity="i3", handed_days_ago=10)
-    n = revert_stale_handoffs(db, now=datetime.now(timezone.utc), source="drift",
+    n = revert_stale_handoffs(db, now=datetime.now(UTC), source="drift",
                               seen_identities=set(), max_age_days=7)
     db.refresh(it)
     assert n == 0 and it.status == "handed_off"
@@ -44,7 +45,7 @@ def test_stale_but_absent_is_not_reverted(db):
 
 def test_watchdog_is_source_scoped(db):
     it = _item(db, identity="i4", handed_days_ago=10, source="security")
-    n = revert_stale_handoffs(db, now=datetime.now(timezone.utc), source="drift",
+    n = revert_stale_handoffs(db, now=datetime.now(UTC), source="drift",
                               seen_identities={"i4"}, max_age_days=7)
     db.refresh(it)
     assert n == 0 and it.status == "handed_off"

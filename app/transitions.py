@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,7 @@ def decide(db: Session, item: ChangeItem, *, actor: str, new_status: str,
     prev = item.status
     item.status = new_status
     item.decided_by = actor
-    item.decided_at = datetime.now(timezone.utc)
+    item.decided_at = datetime.now(UTC)
     record_event(db, item, actor=actor, event_type=event_type,
                  from_status=prev, to_status=new_status, detail=detail)
     db.commit()
@@ -34,7 +34,7 @@ def hand_off(db: Session, item: ChangeItem, *, actor: str, detail: str | None = 
     if item.status not in ("pending", "blocked"):
         raise TransitionError(f"hand off only from pending|blocked (status={item.status})")
     prev = item.status
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     item.status = "handed_off"
     item.decided_by = actor
     item.decided_at = now

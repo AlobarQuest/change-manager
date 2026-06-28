@@ -1,8 +1,8 @@
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.pool import StaticPool
 
-from app.db import Base
 import app.models  # noqa: F401  (register tables)
+from app.db import Base
 
 
 def test_change_items_has_handoff_columns():

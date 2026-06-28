@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -19,7 +19,7 @@ def record_event(
 ) -> ChangeEvent:
     """Append one immutable history row. The caller commits."""
     ev = ChangeEvent(
-        item_id=item.id, at=datetime.now(timezone.utc), actor=actor,
+        item_id=item.id, at=datetime.now(UTC), actor=actor,
         event_type=event_type, from_status=from_status, to_status=to_status,
         detail=detail, attempt_id=attempt_id, window_run_id=window_run_id,
     )

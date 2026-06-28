@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import app.web_auth as wa
 from app.models import ChangeItem
@@ -18,7 +18,7 @@ def _item(db, status="pending", brief="# Handoff brief\nDo the thing"):
                     rule_key="coolify.enable_healthcheck", resource_uuid="u1",
                     resource_name="o/app1:main", risk="safe", kind="remediation",
                     reasoning="r", plan={"steps": []}, status=status,
-                    first_seen_at=datetime.now(timezone.utc), last_seen_at=datetime.now(timezone.utc),
+                    first_seen_at=datetime.now(UTC), last_seen_at=datetime.now(UTC),
                     handoff_brief=brief)
     db.add(it); db.commit(); return it
 
