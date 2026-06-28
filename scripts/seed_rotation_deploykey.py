@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 import urllib.request
 
-from app.schemas import EscalationIn, SyncRequest
+from app.schemas import EscalationIn, SyncRequest, TargetIn
 
 # Identify the exact key/app from the audit log; these are the placeholders to confirm at run time.
 RESOURCE_UUID = "DEPLOY_KEY_UUID_FROM_AUDIT_LOG"
@@ -27,12 +27,12 @@ def build_deploykey_sync() -> SyncRequest:
     esc = EscalationIn(
         proposal_id=f"rotation:{RESOURCE_UUID}",
         instance="prod",
-        target={
-            "provider": "coolify",
-            "resource_type": "private_key",
-            "uuid": RESOURCE_UUID,
-            "name": RESOURCE_NAME,
-        },
+        target=TargetIn(
+            provider="coolify",
+            resource_type="private_key",
+            uuid=RESOURCE_UUID,
+            name=RESOURCE_NAME,
+        ),
         risk="caution",
         kind="question",
         reasoning=(

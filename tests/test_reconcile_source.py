@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 from app.models import ChangeItem
 from app.reconcile import reconcile
-from app.schemas import EscalationIn, SyncRequest
+from app.schemas import EscalationIn, SyncRequest, TargetIn
 
 NOW = datetime(2026, 6, 15, 3, 0, tzinfo=UTC)
 
@@ -11,7 +11,7 @@ def drift_esc(uuid="db1", rule="572"):
     return EscalationIn(
         proposal_id=f"{rule}:rand",
         instance="prod",
-        target={"provider": "coolify", "resource_type": "database", "uuid": uuid, "name": "pg1"},
+        target=TargetIn(provider="coolify", resource_type="database", uuid=uuid, name="pg1"),
         risk="safe",
         kind="question",
         reasoning=f"rule #{rule}",
@@ -24,12 +24,12 @@ def sec_esc(uuid="fp1", check="shell.plaintext_secret", urgent=True):
     return EscalationIn(
         proposal_id=f"sec.{check}:{uuid[:6]}",
         instance="mac",
-        target={
-            "provider": "security",
-            "resource_type": "shell",
-            "uuid": uuid,
-            "name": "Inline secret",
-        },
+        target=TargetIn(
+            provider="security",
+            resource_type="shell",
+            uuid=uuid,
+            name="Inline secret",
+        ),
         risk="caution",
         kind="question",
         reasoning=f"[URGENT] {check} — /Users/x/.zshrc: TOKEN=<inline value>",
@@ -103,12 +103,12 @@ def rot_esc(uuid="dk1"):
     return EscalationIn(
         proposal_id=f"rotation:{uuid}",
         instance="prod",
-        target={
-            "provider": "coolify",
-            "resource_type": "application",
-            "uuid": uuid,
-            "name": "bookingapp",
-        },
+        target=TargetIn(
+            provider="coolify",
+            resource_type="application",
+            uuid=uuid,
+            name="bookingapp",
+        ),
         risk="caution",
         kind="question",
         reasoning="deploy key exposed via coolify_get_deployment (pre-redaction)",

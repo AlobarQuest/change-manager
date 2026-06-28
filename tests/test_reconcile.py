@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 from app.models import ChangeEvent, ChangeItem
 from app.reconcile import reconcile
-from app.schemas import EscalationIn, SyncRequest
+from app.schemas import EscalationIn, SyncRequest, TargetIn
 
 NOW = datetime(2026, 6, 14, 7, 0, tzinfo=UTC)
 
@@ -11,7 +11,7 @@ def esc(uuid="db1", rule="572", instance="prod", name="pg1"):
     return EscalationIn(
         proposal_id=f"{rule}:rand",
         instance=instance,
-        target={"provider": "coolify", "resource_type": "database", "uuid": uuid, "name": name},
+        target=TargetIn(provider="coolify", resource_type="database", uuid=uuid, name=name),
         risk="safe",
         kind="question",
         reasoning=f"rule #{rule}",
