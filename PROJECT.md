@@ -10,4 +10,5 @@ updated: '2026-06-26'
 
 ## Backlog
 
+- [ ] (P3) /health is behind Authentik forward-auth (returns 302 to id.alobar.net), so external uptime monitoring of /health fails. Consider exempting /health from forward-auth so it's an unauthenticated liveness probe (the in-container healthcheck hits localhost and is unaffected). — added 2026-06-26
 ## Future plans
