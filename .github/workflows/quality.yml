@@ -94,7 +94,17 @@ jobs:
 
       - name: Install Node dependencies
         if: hashFiles('package.json') != ''
-        run: npm ci
+        shell: bash
+        # Expose node_modules/.bin on PATH so `make check` resolves eslint/
+        # prettier/tsc by bare name — they install into the project-local bin,
+        # NOT onto PATH after `npm ci`. Without this every Node tool fails its
+        # `command -v` guard in the Makefile and is silently skipped, so a TS
+        # repo's CI goes green having checked nothing (the Node twin of the
+        # .venv/bin step above; rate-shift-calculator pilot: CI ran zero Node
+        # checks).
+        run: |
+          npm ci
+          echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Install shellcheck
         run: sudo apt-get install -y shellcheck
