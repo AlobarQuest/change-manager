@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.events import record_event
 from app.models import ChangeEvent, ChangeItem
@@ -8,7 +8,7 @@ def _item(db):
     it = ChangeItem(identity="prod::571::a1", instance="prod", rule_key="571",
                     resource_uuid="a1", resource_name="app1", risk="caution", kind="remediation",
                     reasoning="r", plan={}, status="pending",
-                    first_seen_at=datetime.now(timezone.utc), last_seen_at=datetime.now(timezone.utc))
+                    first_seen_at=datetime.now(UTC), last_seen_at=datetime.now(UTC))
     db.add(it); db.flush()
     return it
 

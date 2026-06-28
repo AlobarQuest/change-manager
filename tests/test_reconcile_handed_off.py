@@ -1,5 +1,6 @@
 # tests/test_reconcile_handed_off.py
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from app.models import ChangeItem
 from app.reconcile import reconcile
 from app.schemas import EscalationIn, SyncRequest, TargetIn
@@ -10,8 +11,8 @@ def _seed(db, status="handed_off"):
                     rule_key="coolify.enable_healthcheck", resource_uuid="u1",
                     resource_name="o/app1:main", risk="safe", kind="remediation",
                     reasoning="r", plan={"steps": []}, status=status, source="drift",
-                    first_seen_at=datetime.now(timezone.utc), last_seen_at=datetime.now(timezone.utc),
-                    handoff_brief="# brief", handed_off_at=datetime.now(timezone.utc))
+                    first_seen_at=datetime.now(UTC), last_seen_at=datetime.now(UTC),
+                    handoff_brief="# brief", handed_off_at=datetime.now(UTC))
     db.add(it); db.commit(); return it
 
 

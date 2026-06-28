@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -10,7 +12,7 @@ from app.main import app
 
 
 @pytest.fixture()
-def db() -> Session:
+def db() -> Iterator[Session]:
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -27,7 +29,7 @@ def db() -> Session:
 
 
 @pytest.fixture()
-def client(db: Session) -> TestClient:
+def client(db: Session) -> Iterator[TestClient]:
     app.dependency_overrides[get_db] = lambda: db
     with TestClient(app) as c:
         yield c

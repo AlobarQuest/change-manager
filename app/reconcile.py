@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,7 +15,7 @@ _CLOSED = {"done", "resolved"}
 
 
 def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     new = refreshed = resolved = reopened = 0
 
     seen_identities: set[str] = set()

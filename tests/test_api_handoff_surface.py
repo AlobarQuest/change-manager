@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 import app.auth as auth
 from app.models import ChangeItem
 
@@ -19,7 +20,7 @@ def _item(db, *, lane="app-conformance", handoff=HANDOFF, status="pending", uuid
     it = ChangeItem(identity=f"prod::hc::{uuid}", instance="prod", rule_key="coolify.enable_healthcheck",
                     resource_uuid=uuid, resource_name="o/booking-system:main", risk="safe", kind="remediation",
                     reasoning="r", plan={"steps": []}, status=status, source="drift",
-                    first_seen_at=datetime.now(timezone.utc), last_seen_at=datetime.now(timezone.utc),
+                    first_seen_at=datetime.now(UTC), last_seen_at=datetime.now(UTC),
                     lane=lane, handoff=handoff, handoff_brief="# brief")
     db.add(it); db.commit(); return it
 

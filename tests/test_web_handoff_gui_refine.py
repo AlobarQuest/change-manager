@@ -1,5 +1,6 @@
 # tests/test_web_handoff_gui_refine.py
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 import app.web_auth as wa
 from app.models import ChangeItem
 
@@ -16,7 +17,7 @@ def _item(db, *, lane="app-conformance", brief="# Handoff brief\nadd /api/health
     it = ChangeItem(identity="prod::hc::u1", instance="prod", rule_key="coolify.enable_healthcheck",
                     resource_uuid="u1", resource_name="o/booking-system:main", risk="safe", kind="remediation",
                     reasoning="r", plan={"steps": []}, status="pending", source="drift",
-                    first_seen_at=datetime.now(timezone.utc), last_seen_at=datetime.now(timezone.utc),
+                    first_seen_at=datetime.now(UTC), last_seen_at=datetime.now(UTC),
                     lane=lane, handoff_brief=brief, pr_url=pr_url)
     db.add(it); db.commit(); return it
 

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -11,7 +11,10 @@ from app.events import record_event
 from app.models import ChangeAttempt, ChangeItem, WindowRun
 from app.reconcile import reconcile
 from app.schemas import DecisionIn, OutcomeIn, SyncRequest, SyncSummary
-from app.transitions import TransitionError, decide as _do_decide, hand_off as _do_hand_off, reactivate as _do_reactivate
+from app.transitions import TransitionError
+from app.transitions import decide as _do_decide
+from app.transitions import hand_off as _do_hand_off
+from app.transitions import reactivate as _do_reactivate
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_m2m)])
 
@@ -93,7 +96,7 @@ def outcome(item_id: int, body: OutcomeIn, db: Session = Depends(get_db)) -> dic
     if body.outcome not in _OUTCOME_STATUS:
         raise HTTPException(status_code=422, detail=f"unknown outcome {body.outcome}")
     new_status, event_type = _OUTCOME_STATUS[body.outcome]
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     attempt = ChangeAttempt(item_id=it.id, started_at=now, finished_at=now,
                             outcome=body.outcome, detail=body.detail,
                             tool_calls=body.tool_calls, rollback=body.rollback)
@@ -145,7 +148,7 @@ def reactivate(item_id: int, body: DecisionIn, db: Session = Depends(get_db)) ->
     try:
         _do_reactivate(db, it, actor=body.actor, detail=body.detail)
     except TransitionError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=409, detail=str(e)) from e
     return _item_dict(it)
 
 
@@ -157,7 +160,7 @@ def handoff(item_id: int, body: DecisionIn, db: Session = Depends(get_db)) -> di
     try:
         _do_hand_off(db, it, actor=body.actor, detail=body.detail)
     except TransitionError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=409, detail=str(e)) from e
     return _item_dict(it)
 
 
@@ -224,6 +227,6 @@ def patch_window(window_id: int, body: WindowPatch, db: Session = Depends(get_db
         if val is not None:
             setattr(w, field, val)
     if body.status in {"done", "error"}:
-        w.finished_at = datetime.now(timezone.utc)
+        w.finished_at = datetime.now(UTC)
     db.commit()
     return _window_dict(w)
