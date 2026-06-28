@@ -21,14 +21,27 @@ router = APIRouter(prefix="/api", dependencies=[Depends(require_m2m)])
 
 def _item_dict(it: ChangeItem) -> dict:
     return {
-        "id": it.id, "identity": it.identity, "instance": it.instance, "rule_key": it.rule_key,
-        "resource_type": it.resource_type, "resource_uuid": it.resource_uuid,
-        "resource_name": it.resource_name, "risk": it.risk, "kind": it.kind,
-        "reasoning": it.reasoning, "plan": it.plan, "note": it.note, "status": it.status,
-        "source": it.source, "urgent": it.urgent, "decided_by": it.decided_by,
+        "id": it.id,
+        "identity": it.identity,
+        "instance": it.instance,
+        "rule_key": it.rule_key,
+        "resource_type": it.resource_type,
+        "resource_uuid": it.resource_uuid,
+        "resource_name": it.resource_name,
+        "risk": it.risk,
+        "kind": it.kind,
+        "reasoning": it.reasoning,
+        "plan": it.plan,
+        "note": it.note,
+        "status": it.status,
+        "source": it.source,
+        "urgent": it.urgent,
+        "decided_by": it.decided_by,
         "handoff_brief": it.handoff_brief,
         "handed_off_at": it.handed_off_at.isoformat() if it.handed_off_at else None,
-        "lane": it.lane, "handoff": it.handoff, "pr_url": it.pr_url,
+        "lane": it.lane,
+        "handoff": it.handoff,
+        "pr_url": it.pr_url,
     }
 
 
@@ -82,8 +95,14 @@ def claim(item_id: int, db: Session = Depends(get_db)) -> dict:
     if it.status != "approved":
         raise HTTPException(status_code=409, detail=f"not approved (status={it.status})")
     it.status = "in_progress"
-    record_event(db, it, actor="executor", event_type="claimed",
-                 from_status="approved", to_status="in_progress")
+    record_event(
+        db,
+        it,
+        actor="executor",
+        event_type="claimed",
+        from_status="approved",
+        to_status="in_progress",
+    )
     db.commit()
     return _item_dict(it)
 
@@ -97,15 +116,29 @@ def outcome(item_id: int, body: OutcomeIn, db: Session = Depends(get_db)) -> dic
         raise HTTPException(status_code=422, detail=f"unknown outcome {body.outcome}")
     new_status, event_type = _OUTCOME_STATUS[body.outcome]
     now = datetime.now(UTC)
-    attempt = ChangeAttempt(item_id=it.id, started_at=now, finished_at=now,
-                            outcome=body.outcome, detail=body.detail,
-                            tool_calls=body.tool_calls, rollback=body.rollback)
+    attempt = ChangeAttempt(
+        item_id=it.id,
+        started_at=now,
+        finished_at=now,
+        outcome=body.outcome,
+        detail=body.detail,
+        tool_calls=body.tool_calls,
+        rollback=body.rollback,
+    )
     db.add(attempt)
     db.flush()
     prev = it.status
     it.status = new_status
-    record_event(db, it, actor="executor", event_type=event_type,
-                 from_status=prev, to_status=new_status, detail=body.detail, attempt_id=attempt.id)
+    record_event(
+        db,
+        it,
+        actor="executor",
+        event_type=event_type,
+        from_status=prev,
+        to_status=new_status,
+        detail=body.detail,
+        attempt_id=attempt.id,
+    )
     db.commit()
     return _item_dict(it)
 
@@ -114,7 +147,9 @@ def _decide(db: Session, item_id: int, body: DecisionIn, new_status: str, event_
     it = db.get(ChangeItem, item_id)
     if it is None:
         raise HTTPException(status_code=404, detail="not found")
-    _do_decide(db, it, actor=body.actor, new_status=new_status, event_type=event_type, detail=body.detail)
+    _do_decide(
+        db, it, actor=body.actor, new_status=new_status, event_type=event_type, detail=body.detail
+    )
     return _item_dict(it)
 
 
@@ -183,8 +218,9 @@ def patch_item(item_id: int, body: ItemPatch, db: Session = Depends(get_db)) -> 
         raise HTTPException(status_code=404, detail="not found")
     if body.pr_url is not None:
         it.pr_url = body.pr_url
-        record_event(db, it, actor="api", event_type="pr_linked",
-                     detail=f"PR linked: {body.pr_url}")
+        record_event(
+            db, it, actor="api", event_type="pr_linked", detail=f"PR linked: {body.pr_url}"
+        )
     db.commit()
     return _item_dict(it)
 
@@ -204,8 +240,15 @@ class WindowPatch(BaseModel):
 
 
 def _window_dict(w: WindowRun) -> dict:
-    return {"id": w.id, "status": w.status, "considered": w.considered, "applied": w.applied,
-            "failed": w.failed, "blocked": w.blocked, "skipped": w.skipped}
+    return {
+        "id": w.id,
+        "status": w.status,
+        "considered": w.considered,
+        "applied": w.applied,
+        "failed": w.failed,
+        "blocked": w.blocked,
+        "skipped": w.skipped,
+    }
 
 
 @router.post("/window-runs")

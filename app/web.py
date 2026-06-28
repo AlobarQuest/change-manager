@@ -29,15 +29,18 @@ def dashboard(
         stmt = stmt.where(ChangeItem.source == source)
     items = db.scalars(stmt).all()
     return templates.TemplateResponse(
-        request, "dashboard.html",
+        request,
+        "dashboard.html",
         {"items": items, "current_status": status, "current_source": source, "user": user},
     )
 
 
 @router.get("/items/{item_id}")
 def item_detail(
-    request: Request, item_id: int,
-    user: str = Depends(current_user), db: Session = Depends(get_db),
+    request: Request,
+    item_id: int,
+    user: str = Depends(current_user),
+    db: Session = Depends(get_db),
 ):
     it = db.get(ChangeItem, item_id)
     if it is None:
@@ -46,7 +49,9 @@ def item_detail(
         select(ChangeEvent).where(ChangeEvent.item_id == item_id).order_by(ChangeEvent.id)
     ).all()
     return templates.TemplateResponse(
-        request, "item_detail.html", {"it": it, "events": events, "user": user},
+        request,
+        "item_detail.html",
+        {"it": it, "events": events, "user": user},
     )
 
 
@@ -60,8 +65,11 @@ _ACTIONS = {  # gui action → (new_status, event_type)
 
 @router.post("/items/{item_id}/{action}")
 def item_action(
-    request: Request, item_id: int, action: str,
-    user: str = Depends(current_user), db: Session = Depends(get_db),
+    request: Request,
+    item_id: int,
+    action: str,
+    user: str = Depends(current_user),
+    db: Session = Depends(get_db),
 ):
     it = db.get(ChangeItem, item_id)
     if it is None:

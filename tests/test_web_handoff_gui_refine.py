@@ -14,21 +14,36 @@ def teardown_module(module):
 
 
 def _item(db, *, lane="app-conformance", brief="# Handoff brief\nadd /api/health", pr_url=None):
-    it = ChangeItem(identity="prod::hc::u1", instance="prod", rule_key="coolify.enable_healthcheck",
-                    resource_uuid="u1", resource_name="o/booking-system:main", risk="safe", kind="remediation",
-                    reasoning="r", plan={"steps": []}, status="pending", source="drift",
-                    first_seen_at=datetime.now(UTC), last_seen_at=datetime.now(UTC),
-                    lane=lane, handoff_brief=brief, pr_url=pr_url)
-    db.add(it); db.commit(); return it
+    it = ChangeItem(
+        identity="prod::hc::u1",
+        instance="prod",
+        rule_key="coolify.enable_healthcheck",
+        resource_uuid="u1",
+        resource_name="o/booking-system:main",
+        risk="safe",
+        kind="remediation",
+        reasoning="r",
+        plan={"steps": []},
+        status="pending",
+        source="drift",
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
+        lane=lane,
+        handoff_brief=brief,
+        pr_url=pr_url,
+    )
+    db.add(it)
+    db.commit()
+    return it
 
 
 def test_detail_has_copy_button_and_lane_badge(client, db):
     it = _item(db)
     html = client.get(f"/items/{it.id}").text
     assert "Copy brief" in html
-    assert "app-conformance" in html          # lane badge
-    assert "add /api/health" in html          # brief text rendered
-    assert "DISPATCH SEAM" in html            # documented Phase-2 seam (HTML comment)
+    assert "app-conformance" in html  # lane badge
+    assert "add /api/health" in html  # brief text rendered
+    assert "DISPATCH SEAM" in html  # documented Phase-2 seam (HTML comment)
 
 
 def test_detail_shows_pr_url_when_set(client, db):

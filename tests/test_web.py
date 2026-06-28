@@ -2,16 +2,23 @@ import app.web_auth as wa
 from app.models import ChangeItem
 
 SSO = {"X-authentik-email": "devon@x"}
-ESC = {"proposal_id": "571:r1", "instance": "prod",
-       "target": {"provider": "coolify", "resource_type": "application", "uuid": "a1", "name": "app1"},
-       "risk": "caution", "kind": "remediation", "reasoning": "needs https", "plan": {"root_cause": "x"},
-       "note": None}
+ESC = {
+    "proposal_id": "571:r1",
+    "instance": "prod",
+    "target": {"provider": "coolify", "resource_type": "application", "uuid": "a1", "name": "app1"},
+    "risk": "caution",
+    "kind": "remediation",
+    "reasoning": "needs https",
+    "plan": {"root_cause": "x"},
+    "note": None,
+}
 BODY = {"generated_at": "t", "source_report": "r.json", "escalations": [ESC]}
 APIH = {"Authorization": "Bearer t"}
 
 
 def _seed(client):
     import app.auth as auth
+
     auth.settings.m2m_token = "t"
     wa.settings.dev_user = ""
     client.post("/api/sync", json=BODY, headers=APIH)
@@ -35,8 +42,8 @@ def test_item_detail_shows_plan_and_history(client, db):
     iid = db.query(ChangeItem).one().id
     r = client.get(f"/items/{iid}", headers=SSO)
     assert r.status_code == 200
-    assert "needs https" in r.text          # reasoning
-    assert "ingested" in r.text             # the sync event in the history timeline
+    assert "needs https" in r.text  # reasoning
+    assert "ingested" in r.text  # the sync event in the history timeline
 
 
 def test_item_detail_404(client):
@@ -52,10 +59,10 @@ def test_approve_action_transitions_and_records_sso_user(client, db):
     iid = db.query(ChangeItem).one().id
     r = client.post(f"/items/{iid}/approve", headers={**SSO, "HX-Request": "true"})
     assert r.status_code == 200
-    assert f'id="item-{iid}"' in r.text              # returns the swapped row fragment
+    assert f'id="item-{iid}"' in r.text  # returns the swapped row fragment
     it = db.get(ChangeItem, iid)
     assert it.status == "approved"
-    assert it.decided_by == "devon@x"                 # the SSO email
+    assert it.decided_by == "devon@x"  # the SSO email
     assert db.query(ChangeEvent).filter_by(item_id=iid, event_type="approved").count() == 1
 
 
@@ -95,27 +102,41 @@ def test_windows_requires_sso(client):
 
 
 ROT_ESC = {
-    "proposal_id": "rotation:dk1", "instance": "prod",
-    "target": {"provider": "coolify", "resource_type": "application", "uuid": "dk1", "name": "bookingapp"},
-    "risk": "caution", "kind": "question",
+    "proposal_id": "rotation:dk1",
+    "instance": "prod",
+    "target": {
+        "provider": "coolify",
+        "resource_type": "application",
+        "uuid": "dk1",
+        "name": "bookingapp",
+    },
+    "risk": "caution",
+    "kind": "question",
     "reasoning": "deploy key exposed via coolify_get_deployment (pre-redaction)",
-    "plan": {"steps": ["rotate"]}, "note": None,
+    "plan": {"steps": ["rotate"]},
+    "note": None,
 }
-ROT_BODY = {"generated_at": "t", "source_report": "rotation-scan.json", "escalations": [ROT_ESC], "source": "rotation"}
+ROT_BODY = {
+    "generated_at": "t",
+    "source_report": "rotation-scan.json",
+    "escalations": [ROT_ESC],
+    "source": "rotation",
+}
 
 
 def test_dashboard_source_filter(client):
     import app.auth as auth
     import app.web_auth as wa
+
     auth.settings.m2m_token = "t"
     wa.settings.dev_user = ""
-    client.post("/api/sync", json=BODY, headers=APIH)       # a drift item ("app1")
-    client.post("/api/sync", json=ROT_BODY, headers=APIH)   # a rotation item ("bookingapp")
+    client.post("/api/sync", json=BODY, headers=APIH)  # a drift item ("app1")
+    client.post("/api/sync", json=ROT_BODY, headers=APIH)  # a rotation item ("bookingapp")
 
     r = client.get("/?source=rotation", headers=SSO)
     assert r.status_code == 200
     assert "bookingapp" in r.text
-    assert "app1" not in r.text                              # drift filtered out
+    assert "app1" not in r.text  # drift filtered out
 
     r_all = client.get("/?source=all", headers=SSO)
     assert "bookingapp" in r_all.text and "app1" in r_all.text

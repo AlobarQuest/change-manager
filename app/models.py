@@ -26,9 +26,13 @@ class ChangeItem(Base):
     # Pipeline source ("drift" = Coolify drift audit, "security" = machine security-scan).
     # Reconcile resolves stale items SCOPED to source so the two pipelines don't clobber
     # each other's queues.
-    source: Mapped[str] = mapped_column(String, nullable=False, default="drift", server_default="drift", index=True)
+    source: Mapped[str] = mapped_column(
+        String, nullable=False, default="drift", server_default="drift", index=True
+    )
     # Urgent lane: time-sensitive security findings surface first in the GUI.
-    urgent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false", index=True)
+    urgent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false", index=True
+    )
     decided_by: Mapped[str | None] = mapped_column(String)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -36,7 +40,9 @@ class ChangeItem(Base):
     source_report: Mapped[str | None] = mapped_column(String)
     handoff_brief: Mapped[str | None] = mapped_column(Text)
     handed_off_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    lane: Mapped[str] = mapped_column(String, nullable=False, default="infra-config", server_default="infra-config", index=True)
+    lane: Mapped[str] = mapped_column(
+        String, nullable=False, default="infra-config", server_default="infra-config", index=True
+    )
     handoff: Mapped[dict | None] = mapped_column(JSON)
     pr_url: Mapped[str | None] = mapped_column(String)
 

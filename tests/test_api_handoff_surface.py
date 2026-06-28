@@ -3,9 +3,16 @@ from datetime import UTC, datetime
 import app.auth as auth
 from app.models import ChangeItem
 
-HANDOFF = {"repo": "booking-system", "target_branch": "main", "rule": "coolify.enable_healthcheck",
-           "verified_gap": "g", "required_change": "c", "acceptance_check": "GET … 2xx",
-           "scope_guard": "app only", "do_nots": ["a", "b"]}
+HANDOFF = {
+    "repo": "booking-system",
+    "target_branch": "main",
+    "rule": "coolify.enable_healthcheck",
+    "verified_gap": "g",
+    "required_change": "c",
+    "acceptance_check": "GET … 2xx",
+    "scope_guard": "app only",
+    "do_nots": ["a", "b"],
+}
 
 
 def setup_module(module):
@@ -17,12 +24,27 @@ def _hdr():
 
 
 def _item(db, *, lane="app-conformance", handoff=HANDOFF, status="pending", uuid="u1"):
-    it = ChangeItem(identity=f"prod::hc::{uuid}", instance="prod", rule_key="coolify.enable_healthcheck",
-                    resource_uuid=uuid, resource_name="o/booking-system:main", risk="safe", kind="remediation",
-                    reasoning="r", plan={"steps": []}, status=status, source="drift",
-                    first_seen_at=datetime.now(UTC), last_seen_at=datetime.now(UTC),
-                    lane=lane, handoff=handoff, handoff_brief="# brief")
-    db.add(it); db.commit(); return it
+    it = ChangeItem(
+        identity=f"prod::hc::{uuid}",
+        instance="prod",
+        rule_key="coolify.enable_healthcheck",
+        resource_uuid=uuid,
+        resource_name="o/booking-system:main",
+        risk="safe",
+        kind="remediation",
+        reasoning="r",
+        plan={"steps": []},
+        status=status,
+        source="drift",
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
+        lane=lane,
+        handoff=handoff,
+        handoff_brief="# brief",
+    )
+    db.add(it)
+    db.commit()
+    return it
 
 
 def test_list_filter_by_lane(client, db):
@@ -50,7 +72,9 @@ def test_get_handoff_404_when_no_handoff(client, db):
 
 def test_patch_pr_url(client, db):
     it = _item(db)
-    r = client.patch(f"/api/items/{it.id}", json={"pr_url": "https://github.com/x/y/pull/27"}, headers=_hdr())
+    r = client.patch(
+        f"/api/items/{it.id}", json={"pr_url": "https://github.com/x/y/pull/27"}, headers=_hdr()
+    )
     assert r.status_code == 200
     assert r.json()["pr_url"] == "https://github.com/x/y/pull/27"
     db.refresh(it)

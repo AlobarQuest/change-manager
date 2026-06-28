@@ -2,9 +2,16 @@ import app.auth as auth
 from app.models import ChangeEvent, ChangeItem
 
 H = {"Authorization": "Bearer t"}
-ESC = {"proposal_id": "571:r1", "instance": "prod",
-       "target": {"provider": "coolify", "resource_type": "application", "uuid": "a1", "name": "app1"},
-       "risk": "caution", "kind": "remediation", "reasoning": "r", "plan": {}, "note": None}
+ESC = {
+    "proposal_id": "571:r1",
+    "instance": "prod",
+    "target": {"provider": "coolify", "resource_type": "application", "uuid": "a1", "name": "app1"},
+    "risk": "caution",
+    "kind": "remediation",
+    "reasoning": "r",
+    "plan": {},
+    "note": None,
+}
 BODY = {"generated_at": "t", "source_report": "r.json", "escalations": [ESC]}
 DEC = {"actor": "user:devon@x"}
 

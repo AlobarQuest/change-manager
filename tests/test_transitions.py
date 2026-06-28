@@ -7,11 +7,23 @@ from app.transitions import TransitionError, decide, reactivate
 
 
 def _item(db, status):
-    it = ChangeItem(identity="prod::571::a1", instance="prod", rule_key="571", resource_uuid="a1",
-                    resource_name="app1", risk="caution", kind="remediation", reasoning="r", plan={},
-                    status=status, first_seen_at=datetime.now(UTC),
-                    last_seen_at=datetime.now(UTC))
-    db.add(it); db.flush(); return it
+    it = ChangeItem(
+        identity="prod::571::a1",
+        instance="prod",
+        rule_key="571",
+        resource_uuid="a1",
+        resource_name="app1",
+        risk="caution",
+        kind="remediation",
+        reasoning="r",
+        plan={},
+        status=status,
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
+    )
+    db.add(it)
+    db.flush()
+    return it
 
 
 def test_decide_sets_status_decider_and_event(db):

@@ -29,18 +29,38 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
         item = db.scalar(select(ChangeItem).where(ChangeItem.identity == identity))
         if item is None:
             item = ChangeItem(
-                identity=identity, instance=e.instance, rule_key=rule_key,
-                provider=e.target.provider, resource_type=e.target.resource_type,
-                resource_uuid=e.target.uuid, resource_name=e.target.name,
-                risk=e.risk, kind=e.kind, reasoning=e.reasoning, plan=e.plan, note=e.note,
-                handoff_brief=e.handoff_brief, lane=e.lane, handoff=e.handoff,
-                status="pending", first_seen_at=now, last_seen_at=now,
-                source_report=req.source_report, source=req.source, urgent=urgent,
+                identity=identity,
+                instance=e.instance,
+                rule_key=rule_key,
+                provider=e.target.provider,
+                resource_type=e.target.resource_type,
+                resource_uuid=e.target.uuid,
+                resource_name=e.target.name,
+                risk=e.risk,
+                kind=e.kind,
+                reasoning=e.reasoning,
+                plan=e.plan,
+                note=e.note,
+                handoff_brief=e.handoff_brief,
+                lane=e.lane,
+                handoff=e.handoff,
+                status="pending",
+                first_seen_at=now,
+                last_seen_at=now,
+                source_report=req.source_report,
+                source=req.source,
+                urgent=urgent,
             )
             db.add(item)
             db.flush()
-            record_event(db, item, actor="sync", event_type="ingested", to_status="pending",
-                         detail=f"first seen in {req.source_report}")
+            record_event(
+                db,
+                item,
+                actor="sync",
+                event_type="ingested",
+                to_status="pending",
+                detail=f"first seen in {req.source_report}",
+            )
             new += 1
             continue
 
@@ -56,17 +76,30 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
             item.status = "pending"
             item.decided_by = None
             item.decided_at = None
-            record_event(db, item, actor="sync", event_type="regression_reopened",
-                         from_status=prev, to_status="pending",
-                         detail="drift reappeared after it was closed")
+            record_event(
+                db,
+                item,
+                actor="sync",
+                event_type="regression_reopened",
+                from_status=prev,
+                to_status="pending",
+                detail="drift reappeared after it was closed",
+            )
             reopened += 1
         else:
-            refreshed += 1  # pending/approved/deferred/blocked/failed/wontfix/in_progress: decision stands
+            refreshed += (
+                1  # pending/approved/deferred/blocked/failed/wontfix/in_progress: decision stands
+            )
 
     # Watchdog (reuses this scheduled sync execution; no new scheduler): stale, still-flagged
     # handed_off items revert to pending so a forgotten handoff resurfaces.
-    revert_stale_handoffs(db, now=now, source=req.source, seen_identities=seen_identities,
-                          max_age_days=settings.handoff_watchdog_days)
+    revert_stale_handoffs(
+        db,
+        now=now,
+        source=req.source,
+        seen_identities=seen_identities,
+        max_age_days=settings.handoff_watchdog_days,
+    )
 
     # Items in the queue but NOT in this report → resolved (drift cleared), except wontfix.
     # SCOPED to this sync's source: a security sync must not resolve drift items, and
@@ -81,8 +114,15 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
         if item.identity not in seen_identities:
             prev = item.status
             item.status = "resolved"
-            record_event(db, item, actor="sync", event_type="resolved",
-                         from_status=prev, to_status="resolved", detail="no longer flagged")
+            record_event(
+                db,
+                item,
+                actor="sync",
+                event_type="resolved",
+                from_status=prev,
+                to_status="resolved",
+                detail="no longer flagged",
+            )
             resolved += 1
 
     db.commit()

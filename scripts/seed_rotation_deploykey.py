@@ -10,6 +10,7 @@ Prod run (manual; not part of the automated build):
     CHANGE_MGR_M2M_TOKEN=<from BWS/keychain> \\
     python -m scripts.seed_rotation_deploykey
 """
+
 from __future__ import annotations
 
 import os
@@ -26,7 +27,12 @@ def build_deploykey_sync() -> SyncRequest:
     esc = EscalationIn(
         proposal_id=f"rotation:{RESOURCE_UUID}",
         instance="prod",
-        target={"provider": "coolify", "resource_type": "private_key", "uuid": RESOURCE_UUID, "name": RESOURCE_NAME},
+        target={
+            "provider": "coolify",
+            "resource_type": "private_key",
+            "uuid": RESOURCE_UUID,
+            "name": RESOURCE_NAME,
+        },
         risk="caution",
         kind="question",
         reasoning=(
@@ -34,12 +40,14 @@ def build_deploykey_sync() -> SyncRequest:
             "chokepoint — exposed in transcripts. Rotate: coolify_create_private_key -> re-add the "
             "public key to the GitHub repo -> remove the old key."
         ),
-        plan={"steps": [
-            "coolify_create_private_key (generate replacement)",
-            "github_add_deploy_key (public key) to the repo",
-            "repoint the app to the new key",
-            "coolify_delete_private_key (old)",
-        ]},
+        plan={
+            "steps": [
+                "coolify_create_private_key (generate replacement)",
+                "github_add_deploy_key (public key) to the repo",
+                "repoint the app to the new key",
+                "coolify_delete_private_key (old)",
+            ]
+        },
         note=None,
     )
     return SyncRequest(
@@ -60,7 +68,9 @@ def main() -> None:
     token = os.environ["CHANGE_MGR_M2M_TOKEN"]
     body = build_deploykey_sync().model_dump_json().encode()
     req = urllib.request.Request(
-        f"{base}/api/sync", data=body, method="POST",
+        f"{base}/api/sync",
+        data=body,
+        method="POST",
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
     )
     with urllib.request.urlopen(req) as resp:  # noqa: S310 (trusted internal endpoint)

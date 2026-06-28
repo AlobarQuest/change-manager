@@ -7,19 +7,40 @@ from app.schemas import EscalationIn, SyncRequest, TargetIn
 
 
 def _seed(db, status="handed_off"):
-    it = ChangeItem(identity="prod::coolify.enable_healthcheck::u1", instance="prod",
-                    rule_key="coolify.enable_healthcheck", resource_uuid="u1",
-                    resource_name="o/app1:main", risk="safe", kind="remediation",
-                    reasoning="r", plan={"steps": []}, status=status, source="drift",
-                    first_seen_at=datetime.now(UTC), last_seen_at=datetime.now(UTC),
-                    handoff_brief="# brief", handed_off_at=datetime.now(UTC))
-    db.add(it); db.commit(); return it
+    it = ChangeItem(
+        identity="prod::coolify.enable_healthcheck::u1",
+        instance="prod",
+        rule_key="coolify.enable_healthcheck",
+        resource_uuid="u1",
+        resource_name="o/app1:main",
+        risk="safe",
+        kind="remediation",
+        reasoning="r",
+        plan={"steps": []},
+        status=status,
+        source="drift",
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
+        handoff_brief="# brief",
+        handed_off_at=datetime.now(UTC),
+    )
+    db.add(it)
+    db.commit()
+    return it
 
 
 def _esc():
-    return EscalationIn(proposal_id="coolify.enable_healthcheck:app1", instance="prod",
-                        target=TargetIn(provider="coolify", resource_type="application", uuid="u1", name="o/app1:main"),
-                        risk="safe", kind="remediation", reasoning="r", plan={"steps": []})
+    return EscalationIn(
+        proposal_id="coolify.enable_healthcheck:app1",
+        instance="prod",
+        target=TargetIn(
+            provider="coolify", resource_type="application", uuid="u1", name="o/app1:main"
+        ),
+        risk="safe",
+        kind="remediation",
+        reasoning="r",
+        plan={"steps": []},
+    )
 
 
 def _req(escs):

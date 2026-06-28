@@ -6,14 +6,23 @@ from app.transitions import TransitionError, hand_off
 
 def _item(db, status):
     it = ChangeItem(
-        identity=f"prod::hc::{status}", instance="prod", rule_key="coolify.enable_healthcheck",
-        resource_uuid="u1", resource_name="o/app1:main", risk="safe", kind="remediation",
-        reasoning="r", plan={"steps": []}, status=status,
+        identity=f"prod::hc::{status}",
+        instance="prod",
+        rule_key="coolify.enable_healthcheck",
+        resource_uuid="u1",
+        resource_name="o/app1:main",
+        risk="safe",
+        kind="remediation",
+        reasoning="r",
+        plan={"steps": []},
+        status=status,
         first_seen_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
         last_seen_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
         handoff_brief="# brief",
     )
-    db.add(it); db.commit(); return it
+    db.add(it)
+    db.commit()
+    return it
 
 
 def test_hand_off_from_pending(db):

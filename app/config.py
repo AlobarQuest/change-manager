@@ -8,7 +8,9 @@ class Settings(BaseSettings):
     m2m_token: str = ""  # required in prod; empty disables auth in local dev
     sso_user_header: str = "x-authentik-email"  # forward-auth header Authentik sets
     dev_user: str = ""  # local-dev fallback identity when no SSO header (empty = disabled)
-    handoff_watchdog_days: int = 7  # HANDOFF_WATCHDOG_DAYS: revert stale handed_off items to pending
+    handoff_watchdog_days: int = (
+        7  # HANDOFF_WATCHDOG_DAYS: revert stale handed_off items to pending
+    )
 
 
 settings = Settings()

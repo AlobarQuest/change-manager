@@ -5,10 +5,17 @@ from app.schemas import EscalationIn, SyncRequest, TargetIn
 
 def _esc(brief=None, lane="infra-config"):
     return EscalationIn(
-        proposal_id="coolify.enable_healthcheck:app1", instance="prod",
-        target=TargetIn(provider="coolify", resource_type="application", uuid="u1", name="o/app1:main"),
-        risk="safe", kind="remediation", reasoning="health check missing",
-        plan={"steps": ["x"]}, lane=lane, handoff_brief=brief,
+        proposal_id="coolify.enable_healthcheck:app1",
+        instance="prod",
+        target=TargetIn(
+            provider="coolify", resource_type="application", uuid="u1", name="o/app1:main"
+        ),
+        risk="safe",
+        kind="remediation",
+        reasoning="health check missing",
+        plan={"steps": ["x"]},
+        lane=lane,
+        handoff_brief=brief,
     )
 
 

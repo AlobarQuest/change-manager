@@ -9,21 +9,43 @@ NOW = datetime(2026, 6, 14, 7, 0, tzinfo=UTC)
 
 def esc(uuid="db1", rule="572", instance="prod", name="pg1"):
     return EscalationIn(
-        proposal_id=f"{rule}:rand", instance=instance,
+        proposal_id=f"{rule}:rand",
+        instance=instance,
         target={"provider": "coolify", "resource_type": "database", "uuid": uuid, "name": name},
-        risk="safe", kind="question", reasoning=f"rule #{rule}", plan={"root_cause": "x"}, note=None,
+        risk="safe",
+        kind="question",
+        reasoning=f"rule #{rule}",
+        plan={"root_cause": "x"},
+        note=None,
     )
 
 
 def req(escalations):
-    return SyncRequest(generated_at="2026-06-14T07:00:00Z", source_report="2026-06-14.json", escalations=escalations)
+    return SyncRequest(
+        generated_at="2026-06-14T07:00:00Z",
+        source_report="2026-06-14.json",
+        escalations=escalations,
+    )
 
 
 def _item(db, identity, status):
-    it = ChangeItem(identity=identity, instance="prod", rule_key="572", resource_uuid="db1",
-                    resource_name="pg1", risk="safe", kind="question", reasoning="r", plan={},
-                    status=status, first_seen_at=NOW, last_seen_at=NOW)
-    db.add(it); db.commit(); return it
+    it = ChangeItem(
+        identity=identity,
+        instance="prod",
+        rule_key="572",
+        resource_uuid="db1",
+        resource_name="pg1",
+        risk="safe",
+        kind="question",
+        reasoning="r",
+        plan={},
+        status=status,
+        first_seen_at=NOW,
+        last_seen_at=NOW,
+    )
+    db.add(it)
+    db.commit()
+    return it
 
 
 def test_new_escalation_inserts_pending_with_event(db):
@@ -48,7 +70,10 @@ def test_done_item_reappearing_reopens_to_pending(db):
     assert s.reopened == 1
     it = db.query(ChangeItem).one()
     assert it.status == "pending"
-    assert db.query(ChangeEvent).filter_by(item_id=it.id, event_type="regression_reopened").count() == 1
+    assert (
+        db.query(ChangeEvent).filter_by(item_id=it.id, event_type="regression_reopened").count()
+        == 1
+    )
 
 
 def test_wontfix_survives_sync(db):

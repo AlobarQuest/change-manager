@@ -14,7 +14,10 @@ def test_alembic_upgrade_head_builds_schema():
         env = {**os.environ, "DATABASE_URL": f"sqlite:///{db}"}
         out = subprocess.run(
             [sys.executable, "-m", "alembic", "upgrade", "head"],
-            env=env, cwd=str(REPO), capture_output=True, text=True,
+            env=env,
+            cwd=str(REPO),
+            capture_output=True,
+            text=True,
         )
         assert out.returncode == 0, out.stderr
         names = {
@@ -25,7 +28,6 @@ def test_alembic_upgrade_head_builds_schema():
         }
         assert {"change_items", "change_attempts", "change_events", "window_runs"} <= names
         cols = {
-            r[1]
-            for r in sqlite3.connect(db).execute("pragma table_info(change_items)").fetchall()
+            r[1] for r in sqlite3.connect(db).execute("pragma table_info(change_items)").fetchall()
         }
         assert {"source", "urgent"} <= cols

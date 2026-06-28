@@ -15,10 +15,18 @@ def teardown_module(module):
 
 def _blocked(db, brief=None):
     it = ChangeItem(
-        identity="prod::rotation::vt1", instance="prod", rule_key="rotation.secret",
-        resource_uuid="vt1", resource_name="veritok", risk="caution", kind="question",
-        reasoning="secret exposed", plan={"steps": []}, status="blocked",
-        first_seen_at=datetime.now(UTC), last_seen_at=datetime.now(UTC),
+        identity="prod::rotation::vt1",
+        instance="prod",
+        rule_key="rotation.secret",
+        resource_uuid="vt1",
+        resource_name="veritok",
+        risk="caution",
+        kind="question",
+        reasoning="secret exposed",
+        plan={"steps": []},
+        status="blocked",
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
         handoff_brief=brief,
     )
     db.add(it)
