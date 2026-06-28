@@ -240,9 +240,9 @@ Change the `_item` signature:
 def _item(db, status="pending", brief: str | None = "# Handoff brief\nDo the thing"):
 ```
 
-- [ ] **Step 3: Verify pyright is fully clean and tests pass**
+- [ ] **Step 3: Verify pyright and tests**
 
-Run: `uv run pyright` → Expected: `0 errors, 0 warnings, 0 informations`.
+Run: `uv run pyright` → Expected: `5 errors` remaining, and ALL 5 are the alembic `reportAttributeAccessIssue` (op/context) — see the Revision note below. The 2 None→str are gone.
 Run: `uv run pytest -q` → Expected: `99 passed`.
 
 - [ ] **Step 4: Commit**
@@ -254,32 +254,36 @@ git commit -m "test: allow brief=None in handoff test helpers (clears reportArgu
 
 ---
 
-### Task 6: Re-baseline to empty and confirm green
+> **REVISION (Devon decision, 2026-06-28):** alembic 1.18.5 (pinned in the lockfile CI installs) breaks pyright's static resolution of alembic's dynamic `op`/`context` proxies, producing 5 `reportAttributeAccessIssue` errors not present when the PR #6 baseline was measured (under alembic 1.18.4).
+>
+> **Further finding:** this pyright result is **nondeterministic/bistable** — verified by running pyright repeatedly on identical code: 10 consecutive runs reported 5 errors, then several reported 0. It flips on environment operations (a likely pyright resolver race on alembic's lazy submodules). So the raw `make check` (which runs pyright unfiltered) will **flap green/red** run-to-run.
+>
+> **Decision:** do NOT exclude alembic from pyright and do NOT pin alembic — keep change-manager untouched on this. **Accept the flapping `make check`/CI** as a deliberately visible irritant, and file a backlog item on the **code-standards** project (done: standardize alembic version / pyright handling) as the durable fix. The 5 alembic keys ARE baselined, which keeps the *incremental* hook (`code-standards check`) **stable-clean** in both pyright states (it ignores baselined keys), so local hook gating is reliable; only the raw CI `make check` flaps. Everything else (ruff, ruff-format, shellcheck, 99 tests) is deterministically green. Task 6 below reflects this.
 
-With zero findings, the baseline becomes empty and `make check` passes end-to-end.
+### Task 6: Re-baseline and confirm the only red is the tracked alembic pyright errors
 
 **Files:**
-- Modify: `.code-standards.toml` (regenerated `baseline = []`)
+- Modify: `.code-standards.toml` (regenerated — should contain the 5 alembic `reportAttributeAccessIssue` keys)
 
-- [ ] **Step 1: Re-baseline**
+- [ ] **Step 1: Re-baseline (in the alembic-1.18.5 environment CI uses)**
 
-Run (from the repo root, venv active so pinned ruff/pyright + app deps are visible — this matters or phantom `reportMissingImports` return):
+Run (repo root, venv active — alembic 1.18.5 installed, so the 5 alembic errors are captured; this avoids the PR #6 mistake of baselining under 1.18.4):
 
 ```bash
 PYTHONPATH="$HOME/Developer/code-standards/src" python -m code_standards.cli baseline
 ```
-Expected: `Baseline re-recorded: 0 keys`.
+Expected: `Baseline re-recorded: 5 keys` (all `reportAttributeAccessIssue` in `alembic/`).
 
-- [ ] **Step 2: Run the full gate exactly as CI does**
+- [ ] **Step 2: Confirm the incremental gate is clean and make check is red ONLY on alembic pyright**
 
-Run: `source .venv/bin/activate && make check`
-Expected: ruff clean, `ruff format --check` clean, pyright `0 errors`, shellcheck clean, `99 passed`, overall exit 0.
+Run: `PYTHONPATH="$HOME/Developer/code-standards/src" python -m code_standards.cli check` → Expected: exit 0 (no new violations).
+Run: `source .venv/bin/activate && make check` → Expected: ruff clean, `ruff format --check` clean, shellcheck clean, `99 passed`; pyright reports exactly the 5 alembic errors → make check exits non-zero. This residual red is intentional and tracked (code-standards backlog).
 
 - [ ] **Step 3: Commit and push**
 
 ```bash
-git add .code-standards.toml
-git commit -m "chore(code-standards): re-baseline to empty (all debt cleared)"
+git add .code-standards.toml docs/superpowers/plans/2026-06-28-code-standards-debt-to-green.md
+git commit -m "chore(code-standards): re-baseline (5 alembic pyright errors tracked; rest green)"
 git push
 ```
 
