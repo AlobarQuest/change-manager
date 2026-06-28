@@ -1,5 +1,5 @@
 import app.web_auth as wa
-from app.models import ChangeItem
+from app.models import ChangeEvent, ChangeItem
 
 SSO = {"X-authentik-email": "devon@x"}
 ESC = {
@@ -49,9 +49,6 @@ def test_item_detail_shows_plan_and_history(client, db):
 def test_item_detail_404(client):
     _seed(client)
     assert client.get("/items/9999", headers=SSO).status_code == 404
-
-
-from app.models import ChangeEvent
 
 
 def test_approve_action_transitions_and_records_sso_user(client, db):

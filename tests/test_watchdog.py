@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
 from app.models import ChangeEvent, ChangeItem
+from app.reconcile import reconcile
+from app.schemas import EscalationIn, SyncRequest, TargetIn
 from app.watchdog import revert_stale_handoffs
 
 
@@ -67,10 +69,6 @@ def test_watchdog_is_source_scoped(db):
     )
     db.refresh(it)
     assert n == 0 and it.status == "handed_off"
-
-
-from app.reconcile import reconcile
-from app.schemas import EscalationIn, SyncRequest, TargetIn
 
 
 def _esc(uuid="i1"):
