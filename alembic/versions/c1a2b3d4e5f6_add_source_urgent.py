@@ -9,6 +9,7 @@ Revises: b00c8b315bae
 Create Date: 2026-06-15 00:00:00.000000
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -22,8 +23,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column("change_items", sa.Column("source", sa.String(), nullable=False, server_default="drift"))
-    op.add_column("change_items", sa.Column("urgent", sa.Boolean(), nullable=False, server_default=sa.false()))
+    op.add_column(
+        "change_items", sa.Column("source", sa.String(), nullable=False, server_default="drift")
+    )
+    op.add_column(
+        "change_items", sa.Column("urgent", sa.Boolean(), nullable=False, server_default=sa.false())
+    )
     op.create_index(op.f("ix_change_items_source"), "change_items", ["source"], unique=False)
     op.create_index(op.f("ix_change_items_urgent"), "change_items", ["urgent"], unique=False)
 

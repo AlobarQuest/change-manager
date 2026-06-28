@@ -26,6 +26,7 @@ def test_main_refuses_unsubstituted_placeholder(monkeypatch):
     import pytest
 
     from scripts import seed_rotation_deploykey as seed
+
     # Placeholder is still the default; main() must raise BEFORE any network/env access.
     monkeypatch.delenv("CHANGE_MGR_API_BASE", raising=False)
     with pytest.raises(RuntimeError, match="Substitute RESOURCE_UUID"):

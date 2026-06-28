@@ -1,12 +1,20 @@
 import app.auth as auth
 
 ESC = {
-    "proposal_id": "572:r1", "instance": "prod",
+    "proposal_id": "572:r1",
+    "instance": "prod",
     "target": {"provider": "coolify", "resource_type": "database", "uuid": "db1", "name": "pg1"},
-    "risk": "safe", "kind": "question", "reasoning": "rule #572",
-    "plan": {"root_cause": "x"}, "note": None,
+    "risk": "safe",
+    "kind": "question",
+    "reasoning": "rule #572",
+    "plan": {"root_cause": "x"},
+    "note": None,
 }
-BODY = {"generated_at": "2026-06-14T07:00:00Z", "source_report": "2026-06-14.json", "escalations": [ESC]}
+BODY = {
+    "generated_at": "2026-06-14T07:00:00Z",
+    "source_report": "2026-06-14.json",
+    "escalations": [ESC],
+}
 H = {"Authorization": "Bearer testtok"}
 
 

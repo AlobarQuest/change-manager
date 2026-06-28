@@ -45,6 +45,11 @@ select = ["E", "F", "I", "UP", "B", "C90"]
 [tool.ruff.lint.mccabe]
 max-complexity = 10
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI evaluates Depends() at request time, not as a real mutable default —
+# whitelisting it is the framework-correct way to silence B008 (not a suppression).
+extend-immutable-calls = ["fastapi.Depends"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B", "C90"]
 

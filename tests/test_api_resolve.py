@@ -10,10 +10,18 @@ DEC = {"actor": "user:devon@x", "detail": "veritok secret rotated by hand"}
 def _blocked(db) -> int:
     auth.settings.m2m_token = "t"
     it = ChangeItem(
-        identity="prod::rotation::vt1", instance="prod", rule_key="rotation.secret",
-        resource_uuid="vt1", resource_name="veritok", risk="caution", kind="question",
-        reasoning="secret exposed", plan={}, status="blocked",
-        first_seen_at=datetime.now(UTC), last_seen_at=datetime.now(UTC),
+        identity="prod::rotation::vt1",
+        instance="prod",
+        rule_key="rotation.secret",
+        resource_uuid="vt1",
+        resource_name="veritok",
+        risk="caution",
+        kind="question",
+        reasoning="secret exposed",
+        plan={},
+        status="blocked",
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
     )
     db.add(it)
     db.commit()

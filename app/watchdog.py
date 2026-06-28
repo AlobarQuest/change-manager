@@ -28,9 +28,15 @@ def revert_stale_handoffs(
         item.status = "pending"
         item.decided_by = None
         item.decided_at = None
-        record_event(db, item, actor="watchdog", event_type="handoff_watchdog_reverted",
-                     from_status="handed_off", to_status="pending",
-                     detail=f"handoff unresolved after {max_age_days}d — reverted to pending")
+        record_event(
+            db,
+            item,
+            actor="watchdog",
+            event_type="handoff_watchdog_reverted",
+            from_status="handed_off",
+            to_status="pending",
+            detail=f"handoff unresolved after {max_age_days}d — reverted to pending",
+        )
         reverted += 1
     if reverted:
         db.flush()

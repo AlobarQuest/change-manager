@@ -4,7 +4,10 @@ from app.config import settings
 
 
 def current_user(request: Request) -> str:
-    """The SSO-authenticated email from the forward-auth header, or the dev fallback. 401 if neither."""
+    """The SSO-authenticated email from the forward-auth header, or the dev fallback.
+
+    401 if neither.
+    """
     email = request.headers.get(settings.sso_user_header, "").strip()
     if email:
         return email

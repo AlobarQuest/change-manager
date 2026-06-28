@@ -2,18 +2,33 @@ from app.models import ChangeItem
 from app.reconcile import reconcile
 from app.schemas import EscalationIn, SyncRequest, TargetIn
 
-HANDOFF = {"repo": "booking-system", "target_branch": "main", "rule": "coolify.enable_healthcheck",
-           "verified_gap": "GET …/api/health → 404", "required_change": "add /api/health",
-           "acceptance_check": "GET …/api/health returns 2xx", "scope_guard": "app repo only",
-           "do_nots": ["don't hand-resolve", "don't touch Coolify"]}
+HANDOFF = {
+    "repo": "booking-system",
+    "target_branch": "main",
+    "rule": "coolify.enable_healthcheck",
+    "verified_gap": "GET …/api/health → 404",
+    "required_change": "add /api/health",
+    "acceptance_check": "GET …/api/health returns 2xx",
+    "scope_guard": "app repo only",
+    "do_nots": ["don't hand-resolve", "don't touch Coolify"],
+}
 
 
-def _esc(lane="app-conformance", handoff=HANDOFF, brief="# brief"):
+def _esc(lane="app-conformance", handoff=HANDOFF, brief: str | None = "# brief"):
     return EscalationIn(
-        proposal_id="coolify.enable_healthcheck:app1", instance="prod",
-        target=TargetIn(provider="coolify", resource_type="application", uuid="u1", name="o/booking-system:main"),
-        risk="safe", kind="remediation", reasoning="health check missing",
-        plan={"steps": ["x"]}, lane=lane, handoff=handoff, handoff_brief=brief)
+        proposal_id="coolify.enable_healthcheck:app1",
+        instance="prod",
+        target=TargetIn(
+            provider="coolify", resource_type="application", uuid="u1", name="o/booking-system:main"
+        ),
+        risk="safe",
+        kind="remediation",
+        reasoning="health check missing",
+        plan={"steps": ["x"]},
+        lane=lane,
+        handoff=handoff,
+        handoff_brief=brief,
+    )
 
 
 def _req(escs):

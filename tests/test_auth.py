@@ -6,6 +6,7 @@ from app.auth import require_m2m
 
 def _app(token: str):
     import app.auth as a
+
     a.settings.m2m_token = token  # set the expected token for the test
     app = FastAPI()
 

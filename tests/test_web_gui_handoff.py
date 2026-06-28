@@ -13,14 +13,25 @@ def teardown_module(module):
     wa.settings.dev_user = ""
 
 
-def _item(db, status="pending", brief="# Handoff brief\nDo the thing"):
-    it = ChangeItem(identity=f"prod::hc::{status}", instance="prod",
-                    rule_key="coolify.enable_healthcheck", resource_uuid="u1",
-                    resource_name="o/app1:main", risk="safe", kind="remediation",
-                    reasoning="r", plan={"steps": []}, status=status,
-                    first_seen_at=datetime.now(UTC), last_seen_at=datetime.now(UTC),
-                    handoff_brief=brief)
-    db.add(it); db.commit(); return it
+def _item(db, status="pending", brief: str | None = "# Handoff brief\nDo the thing"):
+    it = ChangeItem(
+        identity=f"prod::hc::{status}",
+        instance="prod",
+        rule_key="coolify.enable_healthcheck",
+        resource_uuid="u1",
+        resource_name="o/app1:main",
+        risk="safe",
+        kind="remediation",
+        reasoning="r",
+        plan={"steps": []},
+        status=status,
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
+        handoff_brief=brief,
+    )
+    db.add(it)
+    db.commit()
+    return it
 
 
 def test_dashboard_has_handed_off_tab(client, db):
