@@ -118,7 +118,9 @@ jobs:
           echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Install shellcheck
-        run: sudo apt-get install -y shellcheck
+        # `apt-get update` first — without a fresh index `install` can 404 on a
+        # stale package version and flake the job.
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
 
       - name: Run full quality check
         # `make check` runs ruff, pyright, eslint, prettier, shellcheck, and pytest.

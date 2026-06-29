@@ -3,6 +3,5 @@ template_set = "v1"
 baseline = []
 
 [tool_versions]
-ruff = "ruff 0.15.20"
-pyright = "pyright 1.1.411"
-shellcheck = "ShellCheck - shell script analysis tool"
+ruff = "0.15.20"
+pyright = "1.1.411"
