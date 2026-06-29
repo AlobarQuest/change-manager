@@ -55,3 +55,4 @@ extend-immutable-calls = ["fastapi.Depends"]
 
 [tool.pyright]
 typeCheckingMode = "basic"
+exclude = ["**/node_modules", "**/__pycache__", "**/.*", "**/alembic", "**/migrations"]

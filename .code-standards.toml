@@ -1,6 +1,6 @@
 languages = ["python", "shell"]
 template_set = "v1"
-baseline = ["alembic/env.py:reportAttributeAccessIssue:40aba412ceeb", "alembic/versions/b00c8b315bae_initial.py:reportAttributeAccessIssue:da0a69161ffc", "alembic/versions/c1a2b3d4e5f6_add_source_urgent.py:reportAttributeAccessIssue:da0a69161ffc", "alembic/versions/d2c3b4a5e6f7_add_handoff.py:reportAttributeAccessIssue:da0a69161ffc", "alembic/versions/e3d4c5b6a7f8_add_lane_handoff_pr_url.py:reportAttributeAccessIssue:da0a69161ffc"]
+baseline = []
 
 [tool_versions]
 ruff = "ruff 0.15.20"

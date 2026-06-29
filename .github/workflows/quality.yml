@@ -2,6 +2,17 @@
 # Destination: .github/workflows/quality.yml
 # Edit upstream and `code-standards sync`.
 #
+# CONTRACT (ADR-0005 — the baseline-vs-CI contract): this `make check` job runs
+# the FULL repo, baseline-BLIND. On a repo carrying accepted `.code-standards.toml`
+# baseline debt it shows RED by design — that red is a visible debt worklist, not a
+# defect. Therefore:
+#   • DO NOT configure this job as a required, merge-blocking status check. If it
+#     gated merges, a PR that REDUCES debt still couldn't merge while other debt
+#     remains — the burndown would freeze.
+#   • The regression gate is the baseline-aware `code-standards check` (the Stop
+#     hook): it blocks only when a change adds a NEW violation beyond the baseline.
+# Red here = "this repo still carries accepted debt"; green = genuinely debt-free.
+#
 # IMPORTANT: Keep tool versions here in sync with your local pins (pyproject.toml,
 # package.json, etc.). Local == CI parity is enforced by design.
 #
