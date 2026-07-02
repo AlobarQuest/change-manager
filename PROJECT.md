@@ -13,5 +13,5 @@ coolify_resources: [change-manager, change-manager-postgres, re45tafypao3nly3qa9
 
 ## Backlog
 
-- [ ] (P3) /health is behind Authentik forward-auth (returns 302 to id.alobar.net), so external uptime monitoring of /health fails. Consider exempting /health from forward-auth so it's an unauthenticated liveness probe (the in-container healthcheck hits localhost and is unaffected). — added 2026-06-26
+- [x] (P3) /health is behind Authentik forward-auth (returns 302 to id.alobar.net), so external uptime monitoring of /health fails. Consider exempting /health from forward-auth so it's an unauthenticated liveness probe (the in-container healthcheck hits localhost and is unaffected). — added 2026-06-26 — RESOLVED (verified 2026-07-02): the two-router Traefik split already exempts `/api` from forward-auth (strips spoofed headers only; M2M bearer guards real endpoints), so `GET https://change-mgr.alobar.net/api/health` returns `200 {"status":"ok"}` unauthenticated while the GUI root correctly 302s to Alobar ID. **External uptime monitoring must target `/api/health`** (the public path), not `/health`. No change needed.
 ## Future plans
