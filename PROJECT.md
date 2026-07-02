@@ -6,6 +6,9 @@ purpose: Web GUI + Postgres for human pre-approval of infra-remediation escalati
 version: 0.1.0
 version_source: pyproject
 updated: '2026-06-26'
+foundation: true
+applicable_standards: [project, security, code, infra]
+coolify_resources: [change-manager, change-manager-postgres, re45tafypao3nly3qa9a79dp, lhom8tm821v2xqr8vogcpktq]
 ---
 
 ## Backlog
