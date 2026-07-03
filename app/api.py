@@ -10,7 +10,7 @@ from app.db import get_db
 from app.events import record_event
 from app.models import ChangeAttempt, ChangeEvent, ChangeItem, WindowRun
 from app.reconcile import reconcile
-from app.schemas import DecisionIn, OutcomeIn, SyncRequest, SyncSummary
+from app.schemas import ClaimIn, DecisionIn, OutcomeIn, SyncRequest, SyncSummary
 from app.transitions import TransitionError
 from app.transitions import decide as _do_decide
 from app.transitions import hand_off as _do_hand_off
@@ -124,7 +124,7 @@ _OUTCOME_STATUS = {
 
 
 @router.post("/items/{item_id}/claim")
-def claim(item_id: int, db: Session = Depends(get_db)) -> dict:
+def claim(item_id: int, body: ClaimIn | None = None, db: Session = Depends(get_db)) -> dict:
     it = db.get(ChangeItem, item_id)
     if it is None:
         raise HTTPException(status_code=404, detail="not found")
@@ -134,7 +134,7 @@ def claim(item_id: int, db: Session = Depends(get_db)) -> dict:
     record_event(
         db,
         it,
-        actor="executor",
+        actor=body.actor if body else "executor",
         event_type="claimed",
         from_status="approved",
         to_status="in_progress",
@@ -168,7 +168,7 @@ def outcome(item_id: int, body: OutcomeIn, db: Session = Depends(get_db)) -> dic
     record_event(
         db,
         it,
-        actor="executor",
+        actor=body.actor,
         event_type=event_type,
         from_status=prev,
         to_status=new_status,
