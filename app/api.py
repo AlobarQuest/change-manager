@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth import require_m2m
 from app.db import get_db
 from app.events import record_event
-from app.models import ChangeAttempt, ChangeItem, WindowRun
+from app.models import ChangeAttempt, ChangeEvent, ChangeItem, WindowRun
 from app.reconcile import reconcile
 from app.schemas import DecisionIn, OutcomeIn, SyncRequest, SyncSummary
 from app.transitions import TransitionError
@@ -76,6 +76,42 @@ def get_item(item_id: int, db: Session = Depends(get_db)) -> dict:
     if it is None:
         raise HTTPException(status_code=404, detail="not found")
     return _item_dict(it)
+
+
+@router.get("/events")
+def list_events(
+    after_id: int = Query(default=0, ge=0),
+    limit: int = Query(default=500, ge=1, le=1000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Read-only event feed for the factory-events adapter (WS-1.1). Cursor = id."""
+    rows = db.execute(
+        select(ChangeEvent, ChangeItem)
+        .join(ChangeItem, ChangeEvent.item_id == ChangeItem.id)
+        .where(ChangeEvent.id > after_id)
+        .order_by(ChangeEvent.id.asc())
+        .limit(limit)
+    ).all()
+    return {
+        "events": [
+            {
+                "id": ev.id,
+                "item_id": ev.item_id,
+                "at": ev.at.isoformat(),
+                "actor": ev.actor,
+                "event_type": ev.event_type,
+                "from_status": ev.from_status,
+                "to_status": ev.to_status,
+                "detail": ev.detail,
+                "attempt_id": ev.attempt_id,
+                "window_run_id": ev.window_run_id,
+                "item_identity": item.identity,
+                "item_rule_key": item.rule_key,
+                "item_instance": item.instance,
+            }
+            for ev, item in rows
+        ]
+    }
 
 
 # outcome → resulting item status + the event type to record
