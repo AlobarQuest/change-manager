@@ -42,11 +42,16 @@ class SyncSummary(BaseModel):
     reopened: int
 
 
+class ClaimIn(BaseModel):
+    actor: str = "executor"  # WS-1.2: executors declare a registry identity
+
+
 class OutcomeIn(BaseModel):
     outcome: str  # done | failed | blocked | skipped_conformant
     detail: str | None = None
     tool_calls: dict[str, Any] | None = None
     rollback: dict[str, Any] | None = None
+    actor: str = "executor"  # WS-1.2: executors declare a registry identity
 
 
 class DecisionIn(BaseModel):
