@@ -7,7 +7,17 @@ version: 0.1.0
 version_source: pyproject
 updated: '2026-06-26'
 foundation: true
-applicable_standards: [project, security, code, infra]
+foundation_contract: 1
+applicable_standards:
+  project: '1.0'
+  security: '1.0'
+  code: '1.0'
+  infra: null
+required_checks:
+- id: quality
+  executor: github-actions:quality.yml
+- id: change-window
+  executor: launchagent:com.devon.change-window
 coolify_resources: [change-manager, change-manager-postgres, re45tafypao3nly3qa9a79dp, lhom8tm821v2xqr8vogcpktq]
 ---
 
