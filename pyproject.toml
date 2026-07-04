@@ -55,4 +55,14 @@ extend-immutable-calls = ["fastapi.Depends"]
 
 [tool.pyright]
 typeCheckingMode = "basic"
-exclude = ["**/node_modules", "**/__pycache__", "**/.*", "**/alembic", "**/migrations"]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+exclude = [
+  "**/node_modules",
+  "**/__pycache__",
+  "**/.*",
+  "**/alembic",
+  "**/migrations",
+  "build",
+]
