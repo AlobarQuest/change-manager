@@ -23,6 +23,7 @@ coolify_resources:
 - change-manager-postgres
 - re45tafypao3nly3qa9a79dp
 - lhom8tm821v2xqr8vogcpktq
+delivery_profile: dependency-update
 ---
 
 ## Backlog
