@@ -19,5 +19,10 @@ COPY alembic.ini entrypoint.sh ./
 RUN chmod +x entrypoint.sh && useradd -m appuser && chown -R appuser /app
 USER appuser
 
+# The commit this image was built from, reported by /api/health so a post-deploy
+# check can tell this container from the one it replaced.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=$GIT_SHA
+
 EXPOSE 8000
 ENTRYPOINT ["./entrypoint.sh"]
