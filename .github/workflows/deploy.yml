@@ -32,6 +32,8 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           tags: |
             ghcr.io/alobarquest/change-manager:main
             ghcr.io/alobarquest/change-manager:${{ github.sha }}
@@ -40,3 +42,36 @@ jobs:
           curl -fsSL -X GET \
             "${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_DEPLOY_TOKEN }}"
+
+      # The trigger above succeeds the moment Coolify ACCEPTS it — it says nothing about
+      # whether the build finished, the container started, or the app came back. Until
+      # this step existed, a merge that broke production reported a green pipeline.
+      #
+      # Polling for `status == "ok"` alone would not fix that: Coolify serves the OLD
+      # container throughout the swap, so a liveness poll returns 200 the whole time and
+      # passes whether or not the new image ever ran. The check is therefore on the
+      # REVISION — it waits until the deployed build reports the commit just pushed.
+      - name: Verify the new revision is live
+        env:
+          EXPECTED: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          url=https://change-mgr.alobar.net/api/health
+          deadline=$(( SECONDS + 600 ))
+          seen=""
+          until [ "$SECONDS" -ge "$deadline" ]; do
+            body=$(curl -sf --max-time 10 "$url" || true)
+            seen=$(printf '%s' "$body" | python3 -c \
+              'import json,sys; print(json.load(sys.stdin).get("revision",""))' 2>/dev/null || true)
+            if [ "$seen" = "$EXPECTED" ]; then
+              echo "[OK] $EXPECTED is live and healthy"
+              exit 0
+            fi
+            echo "  serving revision '${seen:-<unreachable>}', waiting for ${EXPECTED}..."
+            sleep 15
+          done
+          echo "[FAIL] ${EXPECTED} did not become live within 10 minutes;" \
+               "last seen '${seen:-<unreachable>}'. Production may be serving the previous" \
+               "build, or may be down. Check the Coolify deployment log before merging" \
+               "anything else."
+          exit 1
