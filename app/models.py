@@ -4,6 +4,7 @@ from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Tex
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
+from app.sources import PROPOSED_SOURCES
 
 
 class ChangeItem(Base):
@@ -59,6 +60,19 @@ class ChangeItem(Base):
     # lacking them, which is the reason ADR-0019 records them at all.
     acceptance_criteria: Mapped[list | None] = mapped_column(JSON)
     rollback_plan: Mapped[dict | None] = mapped_column(JSON)
+
+    @property
+    def has_authorized_executor(self) -> bool:
+        """Whether anything in the estate is authorized to carry this change out.
+
+        Derived items are executed by the change-window lanes. A proposed one is not:
+        a deploying merge is landed by merging a pull request, which is increments 3
+        and 4 of ADR-0019. Every door into the EXECUTION lifecycle asks this — claim,
+        outcome and handoff — so "no authorized executor" is asserted at all of them
+        rather than at whichever one was thought of first. The DECISION lifecycle
+        (approve / defer / wontfix / resolve / reactivate) is unaffected.
+        """
+        return self.source not in PROPOSED_SOURCES
 
 
 class ChangeAttempt(Base):

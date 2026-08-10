@@ -1,14 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
 <p><a href="/">&larr; back</a></p>
-<h2>{{ it.resource_type }} '{{ it.resource_name or (it.target_repository ~ "#" ~ it.pull_request_number if it.target_repository else "—") }}' <span class="badge">{{ it.status }}</span></h2>
+<h2>{{ it.resource_type or "" }} '{{ it.resource_name or (it.target_repository ~ "#" ~ it.pull_request_number if it.target_repository else "—") }}' <span class="badge">{{ it.status }}</span></h2>
 <p><strong>Instance:</strong> {{ it.instance }} &middot; <strong>Rule:</strong> {{ it.rule_key }}
    &middot; <strong>Risk:</strong> {{ it.risk }} &middot; <strong>Kind:</strong> {{ it.kind }}</p>
 <p><strong>Why:</strong> {{ it.reasoning }}</p>
 {% if it.note %}<p><strong>Auto-fix held:</strong> {{ it.note }}</p>{% endif %}
-{% if it.status == "blocked" %}
+{% if it.status == "blocked" or (it.status == "approved" and not it.has_authorized_executor) %}
 {# Human-terminal actions so a blocked item is never a dead-end. NOT approve —
-   that would re-queue the executor that already blocked it. #}
+   that would re-queue the executor that already blocked it. The same applies to an
+   approved change no executor will ever claim: approval is the natural click and it
+   must not be the last one available. #}
 <p>
   <form method="post" action="/items/{{ it.id }}/resolve" style="display:inline"><button type="submit">Resolve</button></form>
   <form method="post" action="/items/{{ it.id }}/wontfix" style="display:inline"><button type="submit">Won't-fix</button></form>

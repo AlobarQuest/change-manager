@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import select
 
 from app.deploy_changes import propose_deploy_change
+from app.identity import rule_key_of, stable_identity
 from app.models import ChangeEvent, ChangeItem
 from app.reconcile import _resolve_absent, reconcile
 from app.schemas import DeployChangeIn, EscalationIn, SyncRequest, TargetIn
@@ -94,6 +95,91 @@ def test_the_resolve_sweep_still_resolves_a_derived_item(db):
     """The control for the assertion above: same call, derived source, does resolve."""
     reconcile(db, sync_req([an_escalation()], "drift"))
     assert _resolve_absent(db, source="drift", seen_identities=set()) == 1
+
+
+def colliding_escalation(repo="AlobarQuest/change-manager", pr=42):
+    """A drift escalation whose computed identity IS a deploy record's.
+
+    `stable_identity` is f"{instance}::{rule_key}::{uuid}" and `deploy_identity` is
+    f"deploy::{repo}::{pr}" — one namespace, and all three drift fields are free text.
+    Nothing about this batch is malformed and it declares `source="drift"`, which the
+    entry refusal permits.
+    """
+    return EscalationIn(
+        # The deploy key case-folds the repository, so a colliding batch spells it
+        # that way. Every test using this asserts the identities are equal BEFORE
+        # calling reconcile — otherwise a change to either scheme silently turns this
+        # into a batch that collides with nothing and a guard that is never reached.
+        proposal_id=f"{repo.lower()}:whatever",
+        instance="deploy",
+        target=TargetIn(provider="coolify", resource_type="application", uuid=str(pr), name="x"),
+        risk="safe",
+        kind="question",
+        reasoning="a batch that looks entirely ordinary",
+        plan={"root_cause": "n/a", "steps": ["coolify_deploy the app"]},
+    )
+
+
+def test_a_drift_batch_cannot_adopt_a_deploy_record_by_colliding_on_identity(db, deploy_payload):
+    """The guards key on `source`; the upsert that WRITES `source` keys on identity.
+
+    Refusing `req.source` alone left the join key open: this batch declares
+    source="drift" honestly, lands on the deploy row by identity, and — before this
+    refusal — the refresh rewrote `source` to "drift", after which every guard in
+    `app.sources` read a column the sync had just changed and the record was listed
+    and claimable by the change-window executor.
+    """
+    item, _ = propose_deploy_change(db, DeployChangeIn(**deploy_payload()))
+    assert item.identity == "deploy::alobarquest/change-manager::42"
+
+    # The batch really does collide — asserted, not assumed.
+    e = colliding_escalation()
+    assert stable_identity(e.instance, rule_key_of(e.proposal_id), e.target.uuid) == item.identity
+
+    with pytest.raises(ProposedSourceError):
+        reconcile(db, sync_req([e], "drift"))
+
+    db.rollback()
+    item = db.scalar(select(ChangeItem).where(ChangeItem.source == "deploy"))
+    assert item is not None
+    assert item.source == "deploy" and item.lane == "deploy" and item.plan == {}
+
+
+def test_a_colliding_batch_is_refused_whole_rather_than_partly_applied(db, deploy_payload):
+    """The refusal raises before `reconcile` commits, so an honest escalation sharing
+    the batch is not half-written."""
+    propose_deploy_change(db, DeployChangeIn(**deploy_payload()))
+    with pytest.raises(ProposedSourceError):
+        reconcile(db, sync_req([an_escalation(), colliding_escalation()], "drift"))
+    db.rollback()
+    assert db.scalar(select(ChangeItem).where(ChangeItem.source == "drift")) is None
+
+
+def test_a_proposal_will_not_adopt_another_pipelines_identity(db, client, m2m, deploy_payload):
+    """The mirror. A drift item already holding the identity gets a legible refusal
+    rather than a conflict listing every deploy column as 'differing'."""
+    now = datetime.now(UTC)
+    db.add(
+        ChangeItem(
+            identity="deploy::alobarquest/change-manager::42",
+            instance="deploy",
+            rule_key="AlobarQuest/change-manager",
+            resource_uuid="42",
+            resource_name="x",
+            risk="safe",
+            kind="question",
+            reasoning="already here",
+            plan={},
+            status="pending",
+            source="drift",
+            first_seen_at=now,
+            last_seen_at=now,
+        )
+    )
+    db.commit()
+    r = client.post("/api/deploy-changes", json=deploy_payload(), headers=m2m)
+    assert r.status_code == 409
+    assert "held by a 'drift' item" in r.json()["detail"]
 
 
 def test_a_sync_cannot_declare_the_proposed_source(db, deploy_payload):

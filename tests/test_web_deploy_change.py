@@ -35,6 +35,68 @@ def test_the_detail_page_shows_the_criteria_and_the_rollback_plan(db, client, de
     assert "Root cause" not in html
 
 
+def test_approving_a_deploy_change_is_not_a_dead_end(db, client, deploy_payload):
+    """Approve is the human's most natural click and nothing will ever claim the
+    result, so without terminal actions the record parks where no control reaches it
+    — and the default dashboard view (status=pending) no longer shows it."""
+    _dev_login()
+    item, _ = propose_deploy_change(db, DeployChangeIn(**deploy_payload()))
+    assert client.post(f"/items/{item.id}/approve").status_code in (200, 303)
+    db.refresh(item)
+    assert item.status == "approved"
+
+    detail = client.get(f"/items/{item.id}").text
+    assert f"/items/{item.id}/resolve" in detail
+    assert f"/items/{item.id}/wontfix" in detail
+
+    row = client.get("/?status=approved&source=deploy").text
+    assert f"/items/{item.id}/resolve" in row
+
+    # And the action a human reaches for actually works from `approved`.
+    assert client.post(f"/items/{item.id}/wontfix").status_code in (200, 303)
+    db.refresh(item)
+    assert item.status == "wontfix"
+
+
+def test_the_detail_heading_does_not_render_the_word_None(db, client, deploy_payload):
+    _dev_login()
+    item, _ = propose_deploy_change(db, DeployChangeIn(**deploy_payload()))
+    heading = client.get(f"/items/{item.id}").text.split("</h2>")[0].split("<h2>")[1]
+    assert "None" not in heading
+    assert "AlobarQuest/change-manager#42" in heading
+
+
+def test_an_approved_drift_item_keeps_its_own_buttonless_page(db, client):
+    """The control: this change adds actions for records with no executor, and must
+    not add them for records that have one — an approved drift item is claimed by the
+    window executor, and offering Resolve would race it."""
+    from datetime import UTC, datetime
+
+    from app.models import ChangeItem
+
+    _dev_login()
+    now = datetime.now(UTC)
+    it = ChangeItem(
+        identity="prod::572::db2",
+        instance="prod",
+        rule_key="572",
+        resource_uuid="db2",
+        resource_name="pg2",
+        risk="safe",
+        kind="question",
+        reasoning="rule #572",
+        plan={},
+        status="approved",
+        source="drift",
+        first_seen_at=now,
+        last_seen_at=now,
+    )
+    db.add(it)
+    db.commit()
+    detail = client.get(f"/items/{it.id}").text
+    assert f"/items/{it.id}/resolve" not in detail
+
+
 def test_a_drift_item_still_renders_its_plan(db, client):
     from datetime import UTC, datetime
 

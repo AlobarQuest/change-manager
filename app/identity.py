@@ -13,5 +13,11 @@ def deploy_identity(target_repository: str, pull_request_number: int) -> str:
 
     Re-proposing the same pull request finds the existing record instead of creating
     a second one, so a caller that lost our response can retry safely.
+
+    Case-folded because GitHub repository names are case-insensitive: `AlobarQuest/…`
+    and `alobarquest/…` are one pull request, and without this they are two records
+    for it, which makes "one record per pull request" false and hides one of them from
+    anything that looks the change up by repository. The item still STORES the name as
+    the proposer wrote it — only the key is folded.
     """
-    return f"deploy::{target_repository}::{pull_request_number}"
+    return f"deploy::{target_repository.lower()}::{pull_request_number}"

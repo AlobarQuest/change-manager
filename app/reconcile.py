@@ -76,6 +76,22 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
         urgent = e.urgent or e.reasoning.startswith("[URGENT]")
 
         item = db.scalar(select(ChangeItem).where(ChangeItem.identity == identity))
+        if item is not None and item.source in PROPOSED_SOURCES:
+            # Refusing `req.source` is not enough, because the upsert finds items by
+            # IDENTITY and identity is just as caller-derived: `stable_identity` is
+            # f"{instance}::{rule_key}::{uuid}" and `deploy_identity` is
+            # f"deploy::{repo}::{pr}" — one namespace, three free-text fields. A batch
+            # honestly declaring source="drift" with instance="deploy" lands on a
+            # deploy record and the refresh below would rewrite `source`, after which
+            # every guard in `app.sources` reads a column this sync just changed and
+            # the record goes to the window executor's Coolify agent.
+            #
+            # Keyed on the FOUND ROW rather than on the shape of the incoming
+            # identity, so it holds whatever either identity scheme becomes.
+            raise ProposedSourceError(
+                f"escalation identity '{identity}' belongs to a proposed change "
+                f"(source '{item.source}'), which a scan batch may not adopt"
+            )
         if item is None:
             item = ChangeItem(
                 identity=identity,

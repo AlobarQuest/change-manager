@@ -14,6 +14,7 @@ that can be refused, which is the whole point of ADR-0019 recording them.
 from datetime import UTC, datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.events import record_event
@@ -59,10 +60,37 @@ class DeployChangeConflict(Exception):
         self.differing = differing
 
 
+class DeployChangeIdentityHeld(Exception):
+    """This pull request's identity is already held by a record of another pipeline."""
+
+    def __init__(self, item_id: int, source: str) -> None:
+        super().__init__(f"identity for this pull request is held by a '{source}' item ({item_id})")
+        self.item_id = item_id
+        self.source = source
+
+
 def _proposed(body: DeployChangeIn) -> dict:
     values = body.model_dump()
     values["rollback_plan"] = body.rollback_plan.model_dump()
     return {field: values[field] for field in _PROPOSED_FIELDS}
+
+
+def _existing(db: Session, identity: str, proposed: dict) -> ChangeItem | None:
+    """The record this proposal is a repeat of, or None. Raises on a real conflict."""
+    item = db.scalar(select(ChangeItem).where(ChangeItem.identity == identity))
+    if item is None:
+        return None
+    if item.source != DEPLOY_SOURCE:
+        # `change_items.identity` is unique across every pipeline, and the drift
+        # scheme (f"{instance}::{rule_key}::{uuid}") can spell a deploy identity. The
+        # mirror of reconcile's refusal: it will not adopt ours, and we will not adopt
+        # its. Without this the field-by-field comparison below reports every deploy
+        # column as "differing", which is fail-closed but unreadable.
+        raise DeployChangeIdentityHeld(item.id, item.source)
+    differing = [f for f in _PROPOSED_FIELDS if getattr(item, f) != proposed[f]]
+    if differing:
+        raise DeployChangeConflict(item.id, differing)
+    return item
 
 
 def propose_deploy_change(db: Session, body: DeployChangeIn) -> tuple[ChangeItem, bool]:
@@ -75,11 +103,8 @@ def propose_deploy_change(db: Session, body: DeployChangeIn) -> tuple[ChangeItem
     proposed = _proposed(body)
     identity = deploy_identity(body.target_repository, body.pull_request_number)
 
-    existing = db.scalar(select(ChangeItem).where(ChangeItem.identity == identity))
+    existing = _existing(db, identity, proposed)
     if existing is not None:
-        differing = [f for f in _PROPOSED_FIELDS if getattr(existing, f) != proposed[f]]
-        if differing:
-            raise DeployChangeConflict(existing.id, differing)
         return existing, False
 
     now = datetime.now(UTC)
@@ -97,14 +122,25 @@ def propose_deploy_change(db: Session, body: DeployChangeIn) -> tuple[ChangeItem
         **proposed,
     )
     db.add(item)
-    db.flush()
-    record_event(
-        db,
-        item,
-        actor=body.actor,
-        event_type="proposed",
-        to_status="pending",
-        detail=f"deploying merge proposed: {identity}",
-    )
-    db.commit()
+    try:
+        db.flush()
+        record_event(
+            db,
+            item,
+            actor=body.actor,
+            event_type="proposed",
+            to_status="pending",
+            detail=f"deploying merge proposed: {identity}",
+        )
+        db.commit()
+    except IntegrityError:
+        # A concurrent proposal for the same pull request won the unique index between
+        # our SELECT and our INSERT. That is the retry this function promises to
+        # support, so it must not surface as a 500: roll back and answer from the row
+        # that landed — replay if it says the same thing, conflict if it does not.
+        db.rollback()
+        winner = _existing(db, identity, proposed)
+        if winner is None:  # pragma: no cover - the row cannot vanish again
+            raise
+        return winner, False
     return item, True

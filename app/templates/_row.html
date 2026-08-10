@@ -19,6 +19,11 @@
       {# Human-terminal only: NOT approve (would re-queue the executor that blocked it). #}
       <button hx-post="/items/{{ it.id }}/resolve" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Resolve</button>
       <button hx-post="/items/{{ it.id }}/wontfix" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Won't-fix</button>
+    {% elif it.status == "approved" and not it.has_authorized_executor %}
+      {# Nothing will ever claim this, so without these the human's own Approve click
+         parks the record where no control reaches it and the default view hides it. #}
+      <button hx-post="/items/{{ it.id }}/resolve" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Resolve</button>
+      <button hx-post="/items/{{ it.id }}/wontfix" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Won't-fix</button>
     {% elif it.status == "wontfix" %}
       <button hx-post="/items/{{ it.id }}/reactivate" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Reactivate</button>
     {% endif %}
