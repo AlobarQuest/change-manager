@@ -8,15 +8,64 @@ from app.events import record_event
 from app.identity import rule_key_of, stable_identity
 from app.models import ChangeItem
 from app.schemas import SyncRequest, SyncSummary
+from app.sources import PROPOSED_SOURCES, ProposedSourceError
 from app.watchdog import revert_stale_handoffs
 
 # Statuses that mean "this drift is settled / closed" and should reopen if it reappears.
 _CLOSED = {"done", "resolved"}
 
 
+def _resolve_absent(db: Session, *, source: str, seen_identities: set[str]) -> int:
+    """Items in the queue but NOT in this report → resolved (drift cleared), except wontfix.
+
+    SCOPED to this sync's source: a security sync must not resolve drift items, and
+    vice-versa — otherwise the two pipelines clobber each other's queues. Proposed
+    items are excluded on top of that, because absence from a scan is what "the drift
+    cleared" MEANS and a proposal is absent from every scan there will ever be.
+
+    Split out from `reconcile` so that exclusion can be asserted at the level where it
+    is true. `reconcile` refuses a proposed source before reaching here, so a test
+    driving `reconcile` cannot tell whether this clause is present — which is how a
+    guard ends up resting entirely on a check in its caller. The caller commits.
+    """
+    resolved = 0
+    open_items = db.scalars(
+        select(ChangeItem).where(
+            ChangeItem.status.notin_(["resolved", "wontfix"]),
+            ChangeItem.source == source,
+            ChangeItem.source.notin_(sorted(PROPOSED_SOURCES)),
+        )
+    ).all()
+    for item in open_items:
+        if item.identity not in seen_identities:
+            prev = item.status
+            item.status = "resolved"
+            record_event(
+                db,
+                item,
+                actor="sync",
+                event_type="resolved",
+                from_status=prev,
+                to_status="resolved",
+                detail="no longer flagged",
+            )
+            resolved += 1
+    return resolved
+
+
 def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
+    # `source` is caller-declared free text, so nothing but this stops a drift-shaped
+    # batch from claiming a proposed pipeline's namespace and reconciling records it
+    # did not produce. Refused here rather than in the route so a direct caller of
+    # reconcile() cannot get round it either.
+    if req.source in PROPOSED_SOURCES:
+        raise ProposedSourceError(
+            f"'{req.source}' items are proposed, not derived — they cannot be reconciled "
+            "from a scan batch"
+        )
+
     now = datetime.now(UTC)
-    new = refreshed = resolved = reopened = 0
+    new = refreshed = reopened = 0
 
     seen_identities: set[str] = set()
 
@@ -27,6 +76,22 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
         urgent = e.urgent or e.reasoning.startswith("[URGENT]")
 
         item = db.scalar(select(ChangeItem).where(ChangeItem.identity == identity))
+        if item is not None and item.source in PROPOSED_SOURCES:
+            # Refusing `req.source` is not enough, because the upsert finds items by
+            # IDENTITY and identity is just as caller-derived: `stable_identity` is
+            # f"{instance}::{rule_key}::{uuid}" and `deploy_identity` is
+            # f"deploy::{repo}::{pr}" — one namespace, three free-text fields. A batch
+            # honestly declaring source="drift" with instance="deploy" lands on a
+            # deploy record and the refresh below would rewrite `source`, after which
+            # every guard in `app.sources` reads a column this sync just changed and
+            # the record goes to the window executor's Coolify agent.
+            #
+            # Keyed on the FOUND ROW rather than on the shape of the incoming
+            # identity, so it holds whatever either identity scheme becomes.
+            raise ProposedSourceError(
+                f"escalation identity '{identity}' belongs to a proposed change "
+                f"(source '{item.source}'), which a scan batch may not adopt"
+            )
         if item is None:
             item = ChangeItem(
                 identity=identity,
@@ -100,29 +165,7 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
         max_age_days=settings.handoff_watchdog_days,
     )
 
-    # Items in the queue but NOT in this report → resolved (drift cleared), except wontfix.
-    # SCOPED to this sync's source: a security sync must not resolve drift items, and
-    # vice-versa — otherwise the two pipelines clobber each other's queues.
-    open_items = db.scalars(
-        select(ChangeItem).where(
-            ChangeItem.status.notin_(["resolved", "wontfix"]),
-            ChangeItem.source == req.source,
-        )
-    ).all()
-    for item in open_items:
-        if item.identity not in seen_identities:
-            prev = item.status
-            item.status = "resolved"
-            record_event(
-                db,
-                item,
-                actor="sync",
-                event_type="resolved",
-                from_status=prev,
-                to_status="resolved",
-                detail="no longer flagged",
-            )
-            resolved += 1
+    resolved = _resolve_absent(db, source=req.source, seen_identities=seen_identities)
 
     db.commit()
     return SyncSummary(new=new, refreshed=refreshed, resolved=resolved, reopened=reopened)

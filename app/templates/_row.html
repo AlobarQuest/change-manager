@@ -4,7 +4,8 @@
     {% if it.source and it.source != "drift" %}<span class="badge">{{ it.source }}</span> {% endif %}
     {{ it.instance }}
   </td>
-  <td><a href="/items/{{ it.id }}">{{ it.resource_name }}</a></td>
+  {# A proposed change has no infrastructure resource; name it by what it lands on. #}
+  <td><a href="/items/{{ it.id }}">{{ it.resource_name or (it.target_repository ~ "#" ~ it.pull_request_number if it.target_repository else "—") }}</a></td>
   <td>{{ it.rule_key }}</td>
   <td>{{ it.reasoning }}</td>
   <td><span class="badge">{{ it.risk }}</span></td>
@@ -16,6 +17,11 @@
       <button hx-post="/items/{{ it.id }}/wontfix" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Won't-fix</button>
     {% elif it.status == "blocked" %}
       {# Human-terminal only: NOT approve (would re-queue the executor that blocked it). #}
+      <button hx-post="/items/{{ it.id }}/resolve" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Resolve</button>
+      <button hx-post="/items/{{ it.id }}/wontfix" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Won't-fix</button>
+    {% elif it.status == "approved" and not it.has_authorized_executor %}
+      {# Nothing will ever claim this, so without these the human's own Approve click
+         parks the record where no control reaches it and the default view hides it. #}
       <button hx-post="/items/{{ it.id }}/resolve" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Resolve</button>
       <button hx-post="/items/{{ it.id }}/wontfix" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Won't-fix</button>
     {% elif it.status == "wontfix" %}

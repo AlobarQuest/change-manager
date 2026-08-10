@@ -7,7 +7,7 @@
 </p>
 <p class="tabs">
   source:
-  {% for s in ["all","drift","security","rotation"] %}
+  {% for s in ["all","drift","security","rotation","deploy"] %}
     <a href="/?source={{ s }}&status={{ current_status }}" class="{{ 'active' if s == current_source else '' }}">{{ s }}</a>
   {% endfor %}
 </p>

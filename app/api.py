@@ -1,16 +1,22 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import require_m2m
 from app.db import get_db
+from app.deploy_changes import (
+    DeployChangeConflict,
+    DeployChangeIdentityHeld,
+    propose_deploy_change,
+)
 from app.events import record_event
 from app.models import ChangeAttempt, ChangeEvent, ChangeItem, WindowRun
 from app.reconcile import reconcile
-from app.schemas import ClaimIn, DecisionIn, OutcomeIn, SyncRequest, SyncSummary
+from app.schemas import ClaimIn, DecisionIn, DeployChangeIn, OutcomeIn, SyncRequest, SyncSummary
+from app.sources import PROPOSED_SOURCES, ProposedSourceError
 from app.transitions import TransitionError
 from app.transitions import decide as _do_decide
 from app.transitions import hand_off as _do_hand_off
@@ -42,12 +48,36 @@ def _item_dict(it: ChangeItem) -> dict:
         "lane": it.lane,
         "handoff": it.handoff,
         "pr_url": it.pr_url,
+        "target_repository": it.target_repository,
+        "pull_request_number": it.pull_request_number,
+        "change_class": it.change_class,
+        "acceptance_criteria": it.acceptance_criteria,
+        "rollback_plan": it.rollback_plan,
     }
 
 
 @router.post("/sync", response_model=SyncSummary)
 def sync(req: SyncRequest, db: Session = Depends(get_db)) -> SyncSummary:
-    return reconcile(db, req)
+    try:
+        return reconcile(db, req)
+    except ProposedSourceError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@router.post("/deploy-changes", status_code=201)
+def propose_deploy(body: DeployChangeIn, response: Response, db: Session = Depends(get_db)) -> dict:
+    """Propose a deploying merge (ADR-0019) — the ingress that does not derive.
+
+    201 when the record is created, 200 when an identical proposal already existed,
+    409 when a different one did. Nothing consults the record yet: the factory-lane
+    admission term is increment 3 and the required-status-check gate is increment 4.
+    """
+    try:
+        item, created = propose_deploy_change(db, body)
+    except (DeployChangeConflict, DeployChangeIdentityHeld) as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    response.status_code = 201 if created else 200
+    return _item_dict(item)
 
 
 @router.get("/items")
@@ -65,6 +95,13 @@ def list_items(
         stmt = stmt.where(ChangeItem.instance == instance)
     if source:
         stmt = stmt.where(ChangeItem.source == source)
+    else:
+        # A caller that does not name a pipeline gets the DERIVED ones. The 04:00
+        # change-window executor lists approved items with no source filter and hands
+        # what comes back to an LLM agent holding production Coolify tools; its own
+        # filter is a denylist, so a source it predates arrives by default. Nothing is
+        # authorized to execute a proposed change, so it is not offered.
+        stmt = stmt.where(ChangeItem.source.notin_(sorted(PROPOSED_SOURCES)))
     if lane:
         stmt = stmt.where(ChangeItem.lane == lane)
     return [_item_dict(it) for it in db.scalars(stmt.order_by(ChangeItem.id)).all()]
@@ -114,6 +151,26 @@ def list_events(
     }
 
 
+def _require_executor(it: ChangeItem) -> None:
+    """Refuse every door into the EXECUTION lifecycle for a proposed change.
+
+    The window executor makes THREE calls, not two — it lists, claims, and then posts
+    an outcome (`run-window.ts` getApproved/claim/postOutcome, and `security-executor.ts`
+    likewise). Guarding only `claim` leaves `outcome` reachable on an unclaimed item,
+    which writes a `ChangeAttempt` and an `attempt_done` event asserting that an agent
+    applied a deploy nothing performed — and that event ships to the tamper-evident
+    factory-events chain. `outcome` is unreachable in practice only because the
+    executor skips an item whose claim failed, and this repository has twice now
+    written down that "unreachable because its only caller checks first" is not a
+    property a future caller inherits.
+    """
+    if not it.has_authorized_executor:
+        raise HTTPException(
+            status_code=409,
+            detail=f"'{it.source}' changes have no authorized executor (item {it.id})",
+        )
+
+
 # outcome → resulting item status + the event type to record
 _OUTCOME_STATUS = {
     "done": ("done", "attempt_done"),
@@ -128,6 +185,7 @@ def claim(item_id: int, body: ClaimIn | None = None, db: Session = Depends(get_d
     it = db.get(ChangeItem, item_id)
     if it is None:
         raise HTTPException(status_code=404, detail="not found")
+    _require_executor(it)
     if it.status != "approved":
         raise HTTPException(status_code=409, detail=f"not approved (status={it.status})")
     it.status = "in_progress"
@@ -148,6 +206,7 @@ def outcome(item_id: int, body: OutcomeIn, db: Session = Depends(get_db)) -> dic
     it = db.get(ChangeItem, item_id)
     if it is None:
         raise HTTPException(status_code=404, detail="not found")
+    _require_executor(it)
     if body.outcome not in _OUTCOME_STATUS:
         raise HTTPException(status_code=422, detail=f"unknown outcome {body.outcome}")
     new_status, event_type = _OUTCOME_STATUS[body.outcome]
@@ -228,6 +287,9 @@ def handoff(item_id: int, body: DecisionIn, db: Session = Depends(get_db)) -> di
     it = db.get(ChangeItem, item_id)
     if it is None:
         raise HTTPException(status_code=404, detail="not found")
+    # A proposed item carries no handoff brief, so `handed_off` would park it in a
+    # status no lane owns — and `revert_stale_handoffs` is forbidden from rescuing it.
+    _require_executor(it)
     try:
         _do_hand_off(db, it, actor=body.actor, detail=body.detail)
     except TransitionError as e:
