@@ -15,8 +15,11 @@ class ChangeItem(Base):
     rule_key: Mapped[str] = mapped_column(String, nullable=False)
     provider: Mapped[str | None] = mapped_column(String)
     resource_type: Mapped[str | None] = mapped_column(String)
-    resource_uuid: Mapped[str] = mapped_column(String, nullable=False)
-    resource_name: Mapped[str] = mapped_column(String, nullable=False)
+    # Infrastructure-resource identifiers: a scan always has them, a proposal never
+    # does. Required of every derived item by `EscalationIn`, which is the only
+    # writer that can set them.
+    resource_uuid: Mapped[str | None] = mapped_column(String)
+    resource_name: Mapped[str | None] = mapped_column(String)
     risk: Mapped[str] = mapped_column(String, nullable=False)
     kind: Mapped[str] = mapped_column(String, nullable=False)
     reasoning: Mapped[str] = mapped_column(Text, nullable=False)
@@ -45,6 +48,17 @@ class ChangeItem(Base):
     )
     handoff: Mapped[dict | None] = mapped_column(JSON)
     pr_url: Mapped[str | None] = mapped_column(String)
+    # ADR-0019: a deploying-merge change — an SDS-initiated merge into a repository
+    # where landing on `main` IS deploying production. Set together by the proposal
+    # route and by nothing else; null on every derived item.
+    target_repository: Mapped[str | None] = mapped_column(String)
+    pull_request_number: Mapped[int | None] = mapped_column(Integer)
+    change_class: Mapped[str | None] = mapped_column(String)
+    # What must hold after the deploy, and what to do when it does not. Distinct
+    # columns rather than keys in `plan` so a deploying change can be REFUSED for
+    # lacking them, which is the reason ADR-0019 records them at all.
+    acceptance_criteria: Mapped[list | None] = mapped_column(JSON)
+    rollback_plan: Mapped[dict | None] = mapped_column(JSON)
 
 
 class ChangeAttempt(Base):

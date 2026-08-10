@@ -4,7 +4,8 @@
     {% if it.source and it.source != "drift" %}<span class="badge">{{ it.source }}</span> {% endif %}
     {{ it.instance }}
   </td>
-  <td><a href="/items/{{ it.id }}">{{ it.resource_name }}</a></td>
+  {# A proposed change has no infrastructure resource; name it by what it lands on. #}
+  <td><a href="/items/{{ it.id }}">{{ it.resource_name or (it.target_repository ~ "#" ~ it.pull_request_number if it.target_repository else "—") }}</a></td>
   <td>{{ it.rule_key }}</td>
   <td>{{ it.reasoning }}</td>
   <td><span class="badge">{{ it.risk }}</span></td>

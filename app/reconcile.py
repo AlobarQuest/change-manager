@@ -8,6 +8,7 @@ from app.events import record_event
 from app.identity import rule_key_of, stable_identity
 from app.models import ChangeItem
 from app.schemas import SyncRequest, SyncSummary
+from app.sources import PROPOSED_SOURCES, ProposedSourceError
 from app.watchdog import revert_stale_handoffs
 
 # Statuses that mean "this drift is settled / closed" and should reopen if it reappears.
@@ -15,6 +16,16 @@ _CLOSED = {"done", "resolved"}
 
 
 def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
+    # `source` is caller-declared free text, so nothing but this stops a drift-shaped
+    # batch from claiming a proposed pipeline's namespace and reconciling records it
+    # did not produce. Refused here rather than in the route so a direct caller of
+    # reconcile() cannot get round it either.
+    if req.source in PROPOSED_SOURCES:
+        raise ProposedSourceError(
+            f"'{req.source}' items are proposed, not derived — they cannot be reconciled "
+            "from a scan batch"
+        )
+
     now = datetime.now(UTC)
     new = refreshed = resolved = reopened = 0
 
@@ -103,10 +114,13 @@ def reconcile(db: Session, req: SyncRequest) -> SyncSummary:
     # Items in the queue but NOT in this report → resolved (drift cleared), except wontfix.
     # SCOPED to this sync's source: a security sync must not resolve drift items, and
     # vice-versa — otherwise the two pipelines clobber each other's queues.
+    # Proposed items are excluded outright: absence from a scan is what "the drift
+    # cleared" means, and a proposal is absent from every scan there will ever be.
     open_items = db.scalars(
         select(ChangeItem).where(
             ChangeItem.status.notin_(["resolved", "wontfix"]),
             ChangeItem.source == req.source,
+            ChangeItem.source.notin_(sorted(PROPOSED_SOURCES)),
         )
     ).all()
     for item in open_items:

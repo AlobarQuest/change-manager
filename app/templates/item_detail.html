@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <p><a href="/">&larr; back</a></p>
-<h2>{{ it.resource_type }} '{{ it.resource_name }}' <span class="badge">{{ it.status }}</span></h2>
+<h2>{{ it.resource_type }} '{{ it.resource_name or (it.target_repository ~ "#" ~ it.pull_request_number if it.target_repository else "—") }}' <span class="badge">{{ it.status }}</span></h2>
 <p><strong>Instance:</strong> {{ it.instance }} &middot; <strong>Rule:</strong> {{ it.rule_key }}
    &middot; <strong>Risk:</strong> {{ it.risk }} &middot; <strong>Kind:</strong> {{ it.kind }}</p>
 <p><strong>Why:</strong> {{ it.reasoning }}</p>
@@ -26,12 +26,33 @@
      Phase 1 is human-only — copy the brief above into a build agent manually. Do NOT auto-spawn an agent. -->
 {% endif %}
 
+{% if it.target_repository %}
+{# ADR-0019: a deploying merge. Landing this pull request deploys production, so the
+   record carries what must hold afterwards and what to do when it does not. #}
+<h3>Deploying merge <span class="badge">{{ it.lane }}</span></h3>
+<p><strong>Repository:</strong> {{ it.target_repository }} &middot;
+   <strong>Pull request:</strong>
+   <a href="https://github.com/{{ it.target_repository }}/pull/{{ it.pull_request_number }}">#{{ it.pull_request_number }}</a>
+   &middot; <strong>Change class:</strong> {{ it.change_class }}</p>
+<h4>Acceptance criteria</h4>
+<ol>{% for c in it.acceptance_criteria or [] %}<li>{{ c }}</li>{% endfor %}</ol>
+<h4>Rollback plan</h4>
+<ol>{% for s in (it.rollback_plan or {}).get("steps") or [] %}<li>{{ s }}</li>{% endfor %}</ol>
+{% for k, v in (it.rollback_plan or {}).items() if k != "steps" %}
+<p><strong>{{ k }}:</strong> {{ v }}</p>
+{% endfor %}
+<p><em>Nothing consults this record yet — the factory-lane admission term is
+   increment 3 and the required-status-check gate is increment 4 of ADR-0019.</em></p>
+{% endif %}
+
+{% if it.plan %}
 <h3>Plan</h3>
 <p><strong>Root cause:</strong> {{ it.plan.get("root_cause", "—") }}</p>
 {% if it.plan.get("steps") %}<ol>{% for s in it.plan["steps"] %}<li>{{ s }}</li>{% endfor %}</ol>{% endif %}
 <p><strong>Tools:</strong> {{ (it.plan.get("infraops_tools") or []) | join(", ") or "—" }}</p>
 <p><strong>Rollback:</strong> {{ it.plan.get("rollback", "—") }} &middot;
    <strong>Window hint:</strong> {{ it.plan.get("cm_window_hint", "—") }}</p>
+{% endif %}
 
 <h3>History</h3>
 <table>

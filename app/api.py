@@ -1,16 +1,18 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import require_m2m
 from app.db import get_db
+from app.deploy_changes import DeployChangeConflict, propose_deploy_change
 from app.events import record_event
 from app.models import ChangeAttempt, ChangeEvent, ChangeItem, WindowRun
 from app.reconcile import reconcile
-from app.schemas import ClaimIn, DecisionIn, OutcomeIn, SyncRequest, SyncSummary
+from app.schemas import ClaimIn, DecisionIn, DeployChangeIn, OutcomeIn, SyncRequest, SyncSummary
+from app.sources import PROPOSED_SOURCES, ProposedSourceError
 from app.transitions import TransitionError
 from app.transitions import decide as _do_decide
 from app.transitions import hand_off as _do_hand_off
@@ -42,12 +44,36 @@ def _item_dict(it: ChangeItem) -> dict:
         "lane": it.lane,
         "handoff": it.handoff,
         "pr_url": it.pr_url,
+        "target_repository": it.target_repository,
+        "pull_request_number": it.pull_request_number,
+        "change_class": it.change_class,
+        "acceptance_criteria": it.acceptance_criteria,
+        "rollback_plan": it.rollback_plan,
     }
 
 
 @router.post("/sync", response_model=SyncSummary)
 def sync(req: SyncRequest, db: Session = Depends(get_db)) -> SyncSummary:
-    return reconcile(db, req)
+    try:
+        return reconcile(db, req)
+    except ProposedSourceError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@router.post("/deploy-changes", status_code=201)
+def propose_deploy(body: DeployChangeIn, response: Response, db: Session = Depends(get_db)) -> dict:
+    """Propose a deploying merge (ADR-0019) — the ingress that does not derive.
+
+    201 when the record is created, 200 when an identical proposal already existed,
+    409 when a different one did. Nothing consults the record yet: the factory-lane
+    admission term is increment 3 and the required-status-check gate is increment 4.
+    """
+    try:
+        item, created = propose_deploy_change(db, body)
+    except DeployChangeConflict as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    response.status_code = 201 if created else 200
+    return _item_dict(item)
 
 
 @router.get("/items")
@@ -65,6 +91,13 @@ def list_items(
         stmt = stmt.where(ChangeItem.instance == instance)
     if source:
         stmt = stmt.where(ChangeItem.source == source)
+    else:
+        # A caller that does not name a pipeline gets the DERIVED ones. The 04:00
+        # change-window executor lists approved items with no source filter and hands
+        # what comes back to an LLM agent holding production Coolify tools; its own
+        # filter is a denylist, so a source it predates arrives by default. Nothing is
+        # authorized to execute a proposed change, so it is not offered.
+        stmt = stmt.where(ChangeItem.source.notin_(sorted(PROPOSED_SOURCES)))
     if lane:
         stmt = stmt.where(ChangeItem.lane == lane)
     return [_item_dict(it) for it in db.scalars(stmt.order_by(ChangeItem.id)).all()]
@@ -128,6 +161,16 @@ def claim(item_id: int, body: ClaimIn | None = None, db: Session = Depends(get_d
     it = db.get(ChangeItem, item_id)
     if it is None:
         raise HTTPException(status_code=404, detail="not found")
+    if it.source in PROPOSED_SOURCES:
+        # The hard stop under the listing guard above. A deploying merge is landed by
+        # merging a pull request, which no executor in this estate is authorized to do
+        # on this record's behalf — that is increments 3 and 4. Claiming it here would
+        # hand it to the window executor's Coolify agent, which cannot perform it and
+        # would improvise against production.
+        raise HTTPException(
+            status_code=409,
+            detail=f"'{it.source}' changes have no authorized executor (item {it.id})",
+        )
     if it.status != "approved":
         raise HTTPException(status_code=409, detail=f"not approved (status={it.status})")
     it.status = "in_progress"
