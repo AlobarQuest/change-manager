@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.deploy_changes import propose_deploy_change
 from app.models import ChangeEvent, ChangeItem
-from app.reconcile import reconcile
+from app.reconcile import _resolve_absent, reconcile
 from app.schemas import DeployChangeIn, EscalationIn, SyncRequest, TargetIn
 from app.sources import ProposedSourceError
 from app.watchdog import revert_stale_handoffs
@@ -73,6 +73,27 @@ def test_the_drift_sweep_still_resolves_its_own_absent_items(db, deploy_payload)
     reconcile(db, sync_req([], "drift"))
     drift = db.scalar(select(ChangeItem).where(ChangeItem.source == "drift"))
     assert drift is not None and drift.status == "resolved"
+
+
+def test_the_resolve_sweep_itself_skips_a_proposed_item(db, deploy_payload):
+    """Asserted one level below `reconcile`, on purpose.
+
+    `reconcile` refuses a proposed source at its entry, so a test driving `reconcile`
+    passes whether or not the sweep carries its own exclusion — which is exactly how
+    a guard ends up resting entirely on a check in its caller. Nothing reaches the
+    sweep this way in production today; the point is that if anything ever does, the
+    sweep still refuses.
+    """
+    item, _ = propose_deploy_change(db, DeployChangeIn(**deploy_payload()))
+    assert _resolve_absent(db, source="deploy", seen_identities=set()) == 0
+    db.refresh(item)
+    assert item.status == "pending"
+
+
+def test_the_resolve_sweep_still_resolves_a_derived_item(db):
+    """The control for the assertion above: same call, derived source, does resolve."""
+    reconcile(db, sync_req([an_escalation()], "drift"))
+    assert _resolve_absent(db, source="drift", seen_identities=set()) == 1
 
 
 def test_a_sync_cannot_declare_the_proposed_source(db, deploy_payload):
