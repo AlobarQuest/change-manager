@@ -89,6 +89,10 @@ def test_downgrade_keeps_the_record_and_its_history_and_parks_it():
 
         con = sqlite3.connect(db)
         items = con.execute("SELECT id, source, status FROM change_items").fetchall()
+        events = con.execute(
+            "SELECT item_id, actor, event_type, from_status, to_status FROM change_events "
+            "ORDER BY id"
+        ).fetchall()
         orphans = con.execute(
             "SELECT COUNT(*) FROM change_events e "
             "LEFT JOIN change_items i ON e.item_id = i.id WHERE i.id IS NULL"
@@ -101,4 +105,10 @@ def test_downgrade_keeps_the_record_and_its_history_and_parks_it():
         "the record must survive, parked — the previous build has none of this "
         "branch's guards and would let an approved deploy change be claimed"
     )
+    # Parking is a status change on a record a human approved, so it is recorded like
+    # every other one. A silent UPDATE would leave the history saying `approved`.
+    assert events == [
+        (1, "proposer", "proposed", None, "pending"),
+        (1, "migration", "wontfixed", "approved", "wontfix"),
+    ]
     assert not (_DEPLOY_COLUMNS & cols)
