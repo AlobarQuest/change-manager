@@ -23,6 +23,8 @@ increment 4.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -47,9 +49,10 @@ VERDICT_ABSENT = "absent"
 VERDICTS = frozenset({VERDICT_SUCCESS, VERDICT_FAILED, VERDICT_UNKNOWN, VERDICT_ABSENT})
 
 # Did production get told anything? A SECOND axis, and the verdict alone is not a substitute for
-# it. Every rollout failure in either repository's history concluded `failure` at the run, and
-# two of the three never reached production at all -- so acting on `failed` without this would,
-# in those two cases, have made the rollback the only production mutation of the day.
+# it. Of the six failing rollout ATTEMPTS in either repository's history, three never reached
+# production at all -- so acting on `failed` without this would, in those three, have made the
+# rollback the only production mutation of the day. And one failing attempt sits inside a run
+# whose conclusion is `success`, so the run conclusion is not even necessary for a failure.
 REACHED_YES = "yes"
 REACHED_NO = "no"
 REACHED_UNKNOWN = "unknown"
@@ -106,13 +109,22 @@ def production_reached_for(
     *,
     classified: bool,
     ran_at_all: bool = True,
+    job_name: str | None = None,
 ) -> str:
     """Was production told anything? Positive evidence is required for the consequential answer.
 
-    `no` is the value that says "do not roll back — nothing was deployed", so it is asserted only
-    on positive evidence: no rollout run exists at all, or the rollout job is absent from a
-    completed run, or it concluded `skipped`. `yes` requires the trigger step to have concluded
-    `success`.
+    `no` is the value that says "do not roll back — nothing was deployed", so it is asserted on
+    positive evidence only: **no rollout run exists at all**, or the rollout job ran and
+    concluded **`skipped`**. `yes` requires the trigger step to have concluded `success`.
+
+    An earlier draft also answered `no` when the job conclusion was absent, reasoning that a job
+    which did not run is a job that told production nothing. Measured, that branch was
+    unreachable for the case it was written for and reachable only for the case it gets wrong: a
+    skipped job IS reported, with `conclusion: "skipped"`, on every attempt of every rollout
+    failure in this estate's history. What actually arrived there was **registry drift** — the
+    transcription naming a job the run does not have — and it answered "nothing was deployed"
+    about a rollout that may have succeeded, which is the exact inversion this axis exists to
+    prevent. `job_name` is None when the watcher could not identify the job at all.
 
     Everything else is `unknown`, INCLUDING a failed trigger step — which for a single-target
     repository probably does mean nothing was told, and for `brain`, whose step is a loop over
@@ -124,28 +136,60 @@ def production_reached_for(
         # and it does not depend on anyone having classified the workflow — an earlier draft
         # gated it on classification and answered `unknown` for the one case that is certain.
         return REACHED_NO
-    if not classified:
-        # Nobody transcribed which job talks to production for these bytes, so the names the
-        # caller looked at cannot be trusted to be the right ones.
+    if not classified or job_name is None:
+        # Either nobody transcribed which job talks to production for these bytes, or the
+        # watcher looked and the run does not report a job by that name. Both mean the caller
+        # cannot say what happened, and neither is evidence that nothing was deployed.
         return REACHED_UNKNOWN
-    if job_conclusion is None or job_conclusion == "skipped":
+    if job_conclusion == "skipped":
         return REACHED_NO
     if step_conclusion == "success":
         return REACHED_YES
     return REACHED_UNKNOWN
 
 
+# The facts the two derived axes are computed FROM. Any of them changing means a later pass saw
+# something different, and the row it would write is a different row.
+_DERIVED_INPUTS = (
+    "workflow_revision",
+    "workflow_attestation",
+    "rollout_job",
+    "rollout_job_conclusion",
+    "trigger_step",
+    "trigger_step_conclusion",
+    "concurrent_run_id",
+    "run_conclusion",
+)
+
+
+def fact_digest(body: DeployObservationIn) -> str:
+    """A short content address over everything the verdict and the reach axis are derived from."""
+    facts = {name: getattr(body, name) for name in _DERIVED_INPUTS}
+    canonical = json.dumps(facts, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(canonical.encode()).hexdigest()[:16]
+
+
 def observation_key(
-    item_id: int, merge_commit_sha: str, run_id: int | None, attempt: int | None
+    item_id: int, merge_commit_sha: str, run_id: int | None, attempt: int | None, digest: str
 ) -> str:
-    """The identity of one observation. Re-observing the same run attempt is a REPLAY.
+    """The identity of one observation. Re-observing the SAME FACTS is a replay; new facts append.
 
     Keyed on the run attempt, not the run: a re-run supersedes its predecessor and concludes
     differently, and both are true things that happened.
+
+    **And content-addressed over the derived inputs**, which is not decoration. Without the
+    digest, a second pass over the same run attempt returned the stored row before deriving
+    anything — so the ordinary repair for this system's own named residual (a workflow edit
+    degrades observations to `unknown`; transcribe the new revision) was a silent no-op, and the
+    record stayed frozen at `unknown` forever with no route back: append-only table, no
+    supersession, no delete, `PATCH` limited to `pr_url`. That is the dead end the merge-commit
+    freeze was removed for, rebuilt one level down and firing on an ordinary event rather than a
+    wrong POST. The landing ledger keys its observations the same way and for the same reason:
+    changed facts must route somewhere loud, never onto the replay branch.
     """
     if run_id is None:
-        return f"{item_id}:{merge_commit_sha}:no-run"
-    return f"{item_id}:{merge_commit_sha}:{run_id}:{attempt or 1}"
+        return f"{item_id}:{merge_commit_sha}:no-run:{digest}"
+    return f"{item_id}:{merge_commit_sha}:{run_id}:{attempt or 1}:{digest}"
 
 
 def _subject(item: ChangeItem, body: DeployObservationIn) -> None:
@@ -184,7 +228,9 @@ def record_deploy_observation(
     """
     _subject(item, body)
 
-    key = observation_key(item.id, body.merge_commit_sha, body.run_id, body.run_attempt)
+    key = observation_key(
+        item.id, body.merge_commit_sha, body.run_id, body.run_attempt, fact_digest(body)
+    )
     existing = db.execute(
         select(DeployObservation).where(DeployObservation.observation_key == key)
     ).scalar_one_or_none()
@@ -199,6 +245,7 @@ def record_deploy_observation(
         # whatever the caller looked at may be the wrong job entirely.
         classified=body.workflow_attestation != "unknown",
         ran_at_all=body.run_id is not None,
+        job_name=body.rollout_job,
     )
     observation = DeployObservation(
         item_id=item.id,
@@ -275,28 +322,6 @@ def observations_for(db: Session, item_id: int) -> list[DeployObservation]:
     )
 
 
-def current_observation(observations: list[DeployObservation]) -> DeployObservation | None:
-    """Reduce an append-only history to the ONE row that answers "how did the rollout go?".
-
-    A change legitimately accumulates contradicting settled verdicts and this is not a defect:
-    `absent` at 09:00 because GitHub had not indexed the run yet, `success` at 09:30 once it
-    had; `unknown` for a cancelled first attempt, `success` for the re-run. Append-only keeps
-    both, because both happened. But every reader -- the detail page, the watcher, increment 4's
-    policy -- needs one answer, and if the rule is not stated here each of them invents its own.
-
-    The rule, in order: an observation that SAW A RUN beats one that saw none, because "no run
-    exists yet" is only ever evidence about the moment it was taken; among those, the highest
-    (run id, attempt), because a re-run supersedes what it re-ran; and failing all that, the
-    latest row appended.
-    """
-    if not observations:
-        return None
-    with_runs = [ob for ob in observations if ob.run_id is not None]
-    if with_runs:
-        return max(with_runs, key=lambda ob: (ob.run_id or 0, ob.run_attempt or 0, ob.id))
-    return max(observations, key=lambda ob: ob.id)
-
-
 def merge_commits_observed(observations: list[DeployObservation]) -> list[str]:
     """The distinct merge commits a change has been observed at, in first-seen order.
 
@@ -315,3 +340,32 @@ def merge_commits_observed(observations: list[DeployObservation]) -> list[str]:
         if ob.merge_commit_sha not in seen:
             seen.append(ob.merge_commit_sha)
     return seen
+
+
+def current_observation(observations: list[DeployObservation]) -> DeployObservation | None:
+    """Reduce an append-only history to the ONE row that answers "how did the rollout go?".
+
+    A change legitimately accumulates contradicting settled verdicts and this is not a defect:
+    `absent` at 09:00 because GitHub had not indexed the run yet, `success` at 09:30 once it
+    had; `unknown` for a cancelled first attempt, `success` for the re-run. Append-only keeps
+    both, because both happened. But every reader -- the detail page, the watcher, increment 4's
+    policy -- needs one answer, and if the rule is not stated here each of them invents its own.
+
+    The rule, in order: an observation that SAW A RUN beats one that saw none, because "no run
+    exists yet" is only ever evidence about the moment it was taken; among those, the highest
+    (run id, attempt), because a re-run supersedes what it re-ran; and failing all that, the
+    latest row appended.
+    """
+    if not observations:
+        return None
+    if len(merge_commits_observed(observations)) > 1:
+        # The rows disagree about which landing they are describing, so there is no "the"
+        # answer. Returning one anyway picks by (run id, attempt) — and run ids only increase,
+        # so a later observation at the WRONG commit always wins, which would headline
+        # `success` on a landing that never happened while the divergence sat in prose four
+        # paragraphs below. Ambiguity reported as ambiguity; `merge_commits_observed` says why.
+        return None
+    with_runs = [ob for ob in observations if ob.run_id is not None]
+    if with_runs:
+        return max(with_runs, key=lambda ob: (ob.run_id or 0, ob.run_attempt or 0, ob.id))
+    return max(observations, key=lambda ob: ob.id)

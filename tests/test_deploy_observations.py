@@ -27,6 +27,7 @@ from app.models import ChangeItem, DeployObservation
 MERGE = "06f9268b5160d3d064f1f2e63d7f36faa2cb06df"
 OTHER = "191ec5a2" + "0" * 32
 REVISION = "a47d4b187c93971a5b5915ce87a963bd4ef35e30"
+JOB = "build-and-deploy"
 
 
 def observation(**overrides) -> dict:
@@ -107,12 +108,27 @@ class TestVerdict:
 
 class TestProductionReached:
     def test_no_requires_positive_evidence_that_the_rollout_job_did_not_run(self):
-        assert production_reached_for(None, None, classified=True, ran_at_all=True) == REACHED_NO
-        assert production_reached_for("skipped", None, classified=True) == REACHED_NO
+        """Two sources of that evidence, and no others: no run at all, or a SKIPPED job.
+
+        "the job conclusion is absent" was a third until review measured its population: a
+        skipped job is reported as `skipped`, so absence only ever meant registry drift.
+        """
+        assert production_reached_for(None, None, classified=True, ran_at_all=False) == REACHED_NO
+        assert production_reached_for("skipped", None, classified=True, job_name=JOB) == REACHED_NO
+        # And the branch that was removed now answers unknown, which is the point.
+        assert (
+            production_reached_for(None, None, classified=True, ran_at_all=True) == REACHED_UNKNOWN
+        )
 
     def test_yes_requires_the_trigger_step_to_have_succeeded(self):
-        assert production_reached_for("success", "success", classified=True) == REACHED_YES
-        assert production_reached_for("failure", "success", classified=True) == REACHED_YES
+        assert (
+            production_reached_for("success", "success", classified=True, job_name=JOB)
+            == REACHED_YES
+        )
+        assert (
+            production_reached_for("failure", "success", classified=True, job_name=JOB)
+            == REACHED_YES
+        )
 
     def test_a_failed_trigger_step_is_unknown_and_deliberately_not_no(self):
         """brain's trigger step is a loop over four webhooks under `bash -e`.
@@ -121,11 +137,17 @@ class TestProductionReached:
         that says "nothing was deployed, do not roll back" — would be the same overstatement as
         calling a liveness poll a revision check.
         """
-        assert production_reached_for("failure", "failure", classified=True) == REACHED_UNKNOWN
+        assert (
+            production_reached_for("failure", "failure", classified=True, job_name=JOB)
+            == REACHED_UNKNOWN
+        )
 
     def test_an_unclassified_workflow_cannot_answer_at_all(self):
         """Nobody transcribed which job talks to production, so the names looked at may be wrong."""
-        assert production_reached_for("success", "success", classified=False) == REACHED_UNKNOWN
+        assert (
+            production_reached_for("success", "success", classified=False, job_name=JOB)
+            == REACHED_UNKNOWN
+        )
 
     def test_NO_RUN_answers_no_even_when_the_workflow_is_unclassified(self):
         """Added because a mutation control survived without it.
@@ -241,6 +263,28 @@ class TestRecording:
         assert first.json()["verdict"] == VERDICT_ABSENT
         assert first.json()["production_reached"] == REACHED_NO
         assert again.json()["id"] == first.json()["id"]
+
+    def test_two_attempts_that_concluded_IDENTICALLY_are_still_two_rows(self, client, m2m, item):
+        """The discriminating form, added because a mutation control survived without it.
+
+        The re-run test below varies the conclusion, so the content digest alone distinguishes
+        the two rows and dropping `attempt` from the key reddened nothing. A re-run that
+        concluded the same way is still a different attempt and still a separate thing that
+        happened.
+        """
+        first = client.post(
+            f"/api/items/{item}/deploy-observation",
+            json=observation(run_attempt=1),
+            headers=m2m,
+        )
+        second = client.post(
+            f"/api/items/{item}/deploy-observation",
+            json=observation(run_attempt=2),
+            headers=m2m,
+        )
+        assert (first.status_code, second.status_code) == (201, 201)
+        page = client.get(f"/api/items/{item}/deploy-observations", headers=m2m).json()
+        assert [o["run_attempt"] for o in page["observations"]] == [1, 2]
 
     def test_a_rerun_appends_rather_than_replacing(self, client, m2m, item):
         client.post(
@@ -474,3 +518,138 @@ class TestExecutorStillRefused:
         assert drift.id in [i["id"] for i in listed]
         claim = client.post(f"/api/items/{drift.id}/claim", json={"actor": "x"}, headers=m2m)
         assert claim.status_code == 200
+
+
+class TestReviewFixes:
+    """One test per KILL from the post-implementation review."""
+
+    def test_re_observing_the_same_run_with_DIFFERENT_FACTS_appends(self, client, m2m, item):
+        """The repair for this system's own named residual was a silent no-op without this.
+
+        The key returned the stored row before deriving anything, so when a workflow edit
+        degraded an observation to `unknown` and somebody transcribed the new revision — the
+        documented fix — a second pass over the same run attempt replayed and the record stayed
+        `unknown` forever: append-only, no supersession, no delete, `PATCH` limited to `pr_url`.
+        That is the dead end the merge-commit freeze was removed for, one level down, firing on
+        an ordinary event rather than a wrong POST.
+        """
+        first = client.post(
+            f"/api/items/{item}/deploy-observation",
+            json=observation(
+                workflow_attestation="unknown",
+                workflow_revision=None,
+                rollout_job=None,
+                rollout_job_conclusion=None,
+                trigger_step=None,
+                trigger_step_conclusion=None,
+            ),
+            headers=m2m,
+        )
+        assert first.status_code == 201
+        assert first.json()["workflow_attestation"] == "unknown"
+        assert first.json()["production_reached"] == REACHED_UNKNOWN
+
+        # Same item, same run, same attempt — and the registry now knows the revision.
+        second = client.post(
+            f"/api/items/{item}/deploy-observation", json=observation(), headers=m2m
+        )
+        assert second.status_code == 201, "a changed fact must append, never replay"
+        assert second.json()["workflow_attestation"] == "revision_confirmed"
+        assert second.json()["production_reached"] == REACHED_YES
+
+        page = client.get(f"/api/items/{item}/deploy-observations", headers=m2m).json()
+        assert len(page["observations"]) == 2
+        assert page["current"]["workflow_attestation"] == "revision_confirmed"
+
+    def test_identical_facts_still_replay(self):
+        """The control. Without it the fix above is "append always", which is not idempotent."""
+        from app.deploy_observations import fact_digest, observation_key
+        from app.schemas import DeployObservationIn
+
+        a = DeployObservationIn(**observation())
+        b = DeployObservationIn(**observation())
+        assert fact_digest(a) == fact_digest(b)
+        assert observation_key(1, MERGE, 9, 1, fact_digest(a)) == observation_key(
+            1, MERGE, 9, 1, fact_digest(b)
+        )
+        c = DeployObservationIn(**observation(run_conclusion="failure"))
+        assert fact_digest(c) != fact_digest(a)
+
+    def test_a_job_the_run_does_not_have_is_UNKNOWN_never_no(self, client, m2m, item):
+        """Registry drift must not read as "nothing was deployed, do not roll back".
+
+        A skipped job is reported with `conclusion: "skipped"`, so the absent-job branch's only
+        real population was drift — and it answered `no` about a rollout that may have
+        succeeded, the exact inversion this axis exists to prevent.
+        """
+        assert (
+            production_reached_for("success", "success", classified=True, job_name=None)
+            == REACHED_UNKNOWN
+        )
+        drifted = client.post(
+            f"/api/items/{item}/deploy-observation",
+            json=observation(
+                rollout_job=None,
+                rollout_job_conclusion=None,
+                trigger_step=None,
+                trigger_step_conclusion=None,
+            ),
+            headers=m2m,
+        )
+        assert drifted.status_code == 201
+        assert drifted.json()["verdict"] == VERDICT_SUCCESS
+        assert drifted.json()["production_reached"] == REACHED_UNKNOWN
+
+    def test_a_skipped_job_is_still_a_confident_no(self):
+        """The case the deleted branch was written for, which was always covered by this one."""
+        assert (
+            production_reached_for("skipped", None, classified=True, job_name="build-and-deploy")
+            == REACHED_NO
+        )
+
+    def test_a_skipped_conclusion_with_NO_JOB_NAMED_is_not_a_no(self, client, m2m, item):
+        """The discriminating form, added because a mutation control survived without it.
+
+        Every other case here pairs an absent job name with an absent conclusion, where the
+        drift guard and the fall-through both answer `unknown` — so forcing a job name at the
+        call site changed nothing and the guard was untested. `no` must require the watcher to
+        have actually identified the job whose conclusion it is reporting.
+        """
+        assert (
+            production_reached_for("skipped", None, classified=True, job_name=None)
+            == REACHED_UNKNOWN
+        )
+        recorded = client.post(
+            f"/api/items/{item}/deploy-observation",
+            json=observation(
+                rollout_job=None,
+                rollout_job_conclusion="skipped",
+                trigger_step=None,
+                trigger_step_conclusion=None,
+            ),
+            headers=m2m,
+        )
+        assert recorded.status_code == 201
+        assert recorded.json()["production_reached"] == REACHED_UNKNOWN
+
+    def test_there_is_no_current_answer_when_the_rows_disagree_about_the_landing(
+        self, client, m2m, item
+    ):
+        """Run ids only increase, so a later observation at the WRONG commit always won.
+
+        `current` would headline `success` for a landing that never happened, with the
+        divergence sitting in unstyled prose four paragraphs below it.
+        """
+        client.post(
+            f"/api/items/{item}/deploy-observation",
+            json=observation(run_id=100, run_conclusion="failure"),
+            headers=m2m,
+        )
+        client.post(
+            f"/api/items/{item}/deploy-observation",
+            json=observation(merge_commit_sha=OTHER, run_id=999),
+            headers=m2m,
+        )
+        page = client.get(f"/api/items/{item}/deploy-observations", headers=m2m).json()
+        assert len(page["merge_commits_observed"]) == 2
+        assert page["current"] is None, "ambiguity must be reported as ambiguity"
