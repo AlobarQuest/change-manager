@@ -4,6 +4,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.deploy_observations import (
+    current_observation,
+    merge_commits_observed,
+    observations_for,
+)
 from app.models import ChangeEvent, ChangeItem, WindowRun
 from app.templates_env import templates
 from app.transitions import TransitionError, decide, hand_off
@@ -48,10 +53,21 @@ def item_detail(
     events = db.scalars(
         select(ChangeEvent).where(ChangeEvent.item_id == item_id).order_by(ChangeEvent.id)
     ).all()
+    observations = observations_for(db, item_id)
     return templates.TemplateResponse(
         request,
         "item_detail.html",
-        {"it": it, "events": events, "user": user},
+        {
+            "it": it,
+            "events": events,
+            "user": user,
+            "observations": observations,
+            # The reduction is read from the service, not recomputed in the template: a rule
+            # with two implementations is drift, and a Jinja expression is a bad place for the
+            # second one.
+            "current_rollout": current_observation(observations),
+            "merge_commits_observed": merge_commits_observed(observations),
+        },
     )
 
 

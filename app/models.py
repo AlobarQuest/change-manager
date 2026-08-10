@@ -1,6 +1,15 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -73,6 +82,97 @@ class ChangeItem(Base):
         (approve / defer / wontfix / resolve / reactivate) is unaffected.
         """
         return self.source not in PROPOSED_SOURCES
+
+    @property
+    def merge_subject(self) -> tuple[str, int] | None:
+        """The (repository, pull request) whose landing this change is about, or None.
+
+        Returns the pair rather than a boolean so there is ONE definition of "names a merge"
+        and callers narrow off it, instead of a predicate saying the fields are present and
+        every caller re-checking that they are.
+        """
+        if self.source not in PROPOSED_SOURCES:
+            return None
+        if self.target_repository is None or self.pull_request_number is None:
+            return None
+        return self.target_repository, self.pull_request_number
+
+    @property
+    def names_a_merge(self) -> bool:
+        """Whether this change identifies a pull request whose landing can be OBSERVED.
+
+        Deliberately NOT the set-complement of `has_authorized_executor`, though it looks like
+        one and a first draft was written that way. "Not executable by a change-window lane" and
+        "names a merge" are different properties that happen to coincide over today's one
+        proposed source, and keying on the first would admit a rollout observation against any
+        FUTURE proposed source that has nothing to do with merging — failing closed only by way
+        of a second guard, which is an accident rather than a design. So the predicate asserts
+        the thing the observation actually needs: a repository and a pull request to attribute
+        the rollout to.
+        """
+        return self.merge_subject is not None
+
+
+class DeployObservation(Base):
+    """What was observed about the rollout a deploying merge caused. APPEND-ONLY.
+
+    Not an outcome. An outcome asserts that an authorized executor APPLIED a change, writes a
+    `ChangeAttempt` and moves the item; increment 1 closed that door for proposed sources and
+    it stays closed. This is a fact about the world, recorded by a watcher that acts on
+    nothing: no `ChangeAttempt`, no transition. Terminating the record remains a decision.
+
+    Every column below is a COORDINATE or a raw fact, except `verdict`, which the server
+    derives from `run_conclusion`. The caller may not assert a verdict. The coordinates are
+    the point: change-manager has no GitHub egress, so this row is asserted rather than
+    observed by the server, and the only honest mitigation is that anyone can re-derive it
+    from the primary source years later.
+    """
+
+    __tablename__ = "deploy_observations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("change_items.id"), nullable=False, index=True)
+    # Server-built from (item, merge commit, run, attempt). Unique, so re-running the watcher
+    # replays instead of appending a duplicate, and a genuinely new run attempt appends.
+    observation_key: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    merge_commit_sha: Mapped[str] = mapped_column(String, nullable=False)
+    # When GitHub said the pull request landed. REQUIRED, because GitHub populates
+    # `merge_commit_sha` on OPEN pull requests with a throwaway test-merge commit that passes
+    # every shape check there is — item 44's own subject, PR #42, has one right now. Demanding
+    # the merge instant does not let this server verify the merge happened (it has no GitHub
+    # egress), but it makes the assertion explicit and re-derivable instead of implied by a
+    # field that is populated either way.
+    merged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    verdict: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # The second axis: was production told anything at all? Derived, like the verdict.
+    production_reached: Mapped[str] = mapped_column(String, nullable=False)
+    workflow_path: Mapped[str] = mapped_column(String, nullable=False)
+    # The blob sha of that workflow file AS IT WAS at the merge commit, and the transcribed
+    # meaning of a green run at those bytes. Without them "the run concluded success" is three
+    # different claims wearing one word.
+    workflow_revision: Mapped[str | None] = mapped_column(String)
+    workflow_attestation: Mapped[str] = mapped_column(String, nullable=False)
+    # Which job and step the watcher looked at, and how each concluded. The names are stored as
+    # well as the outcomes so the row says what question was asked, not only its answer.
+    rollout_job: Mapped[str | None] = mapped_column(String)
+    rollout_job_conclusion: Mapped[str | None] = mapped_column(String)
+    trigger_step: Mapped[str | None] = mapped_column(String)
+    trigger_step_conclusion: Mapped[str | None] = mapped_column(String)
+    # Another rollout run of the same workflow that overlapped this one. Both repositories
+    # redeploy a floating tag with no concurrency group, so an overlap means the two were racing
+    # the same tag and a failure here may be a lost race rather than a broken build.
+    concurrent_run_id: Mapped[int | None] = mapped_column(BigInteger)
+    # BigInteger, deliberately: GitHub run ids passed 2^31 long ago (31426195637 is a real one
+    # from this repository's own history), so Integer overflows on Postgres and silently does
+    # not on SQLite — the shape of increment 1's int4 finding, one column over.
+    run_id: Mapped[int | None] = mapped_column(BigInteger)
+    run_attempt: Mapped[int | None] = mapped_column(Integer)
+    run_url: Mapped[str | None] = mapped_column(String)
+    run_conclusion: Mapped[str | None] = mapped_column(String)
+    run_concluded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    observed_by: Mapped[str] = mapped_column(String, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class ChangeAttempt(Base):

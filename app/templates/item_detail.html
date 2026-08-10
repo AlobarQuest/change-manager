@@ -43,8 +43,41 @@
 {% for k, v in (it.rollback_plan or {}).items() if k != "steps" %}
 <p><strong>{{ k }}:</strong> {{ v }}</p>
 {% endfor %}
-<p><em>Nothing consults this record yet — the factory-lane admission term is
-   increment 3 and the required-status-check gate is increment 4 of ADR-0019.</em></p>
+{% if current_rollout %}
+{# ADR-0019 increment 2. What the rollout this merge caused actually did. TWO answers, because
+   one is not enough: `verdict` says how the workflow run concluded, and `production_reached`
+   says whether production was ever told anything — and rolling back when nothing was deployed
+   would make the rollback the only production mutation of the day. #}
+<h4>Observed rollout <span class="badge">{{ current_rollout.verdict }}</span></h4>
+<p><strong>Production reached:</strong> {{ current_rollout.production_reached }} &middot;
+   <strong>A green run here attests:</strong> {{ current_rollout.workflow_attestation }}</p>
+{% if current_rollout.workflow_attestation != "revision_confirmed" %}
+<p><em>Note: at this workflow revision a successful run does <strong>not</strong> establish that
+   the merged build is the one production is serving.</em></p>
+{% endif %}
+<p><strong>Merge commit:</strong> <code>{{ current_rollout.merge_commit_sha }}</code>
+   {% if current_rollout.run_url %}&middot;
+   <strong>Run:</strong> <a href="{{ current_rollout.run_url }}">{{ current_rollout.run_id }}</a>
+   attempt {{ current_rollout.run_attempt }} concluded {{ current_rollout.run_conclusion }}
+   {% else %}&middot; <strong>No rollout run exists at that commit.</strong>{% endif %}</p>
+{% if current_rollout.concurrent_run_id %}
+<p><em>Another rollout run ({{ current_rollout.concurrent_run_id }}) overlapped this one, and
+   both repositories redeploy a floating image tag — so a failure here may be a lost race
+   rather than a broken build.</em></p>
+{% endif %}
+{% if merge_commits_observed | length > 1 %}
+<p><strong>Divergence:</strong> observations exist at {{ merge_commits_observed | length }}
+   different merge commits ({{ merge_commits_observed | join(", ") }}). A pull request merges
+   once, so one of these is about the wrong landing.</p>
+{% endif %}
+{% if observations | length > 1 %}
+<p><em>{{ observations | length }} observations recorded; the one above is the current answer
+   (a run beats no run; a later attempt beats the one it re-ran).</em></p>
+{% endif %}
+{% endif %}
+<p><em>Nothing acts on this record — the watcher reports and never reverts, the factory-lane
+   admission term is increment 3 and the required-status-check gate is increment 4 of
+   ADR-0019.</em></p>
 {% endif %}
 
 {% if it.plan %}
