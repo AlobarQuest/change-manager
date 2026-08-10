@@ -12,10 +12,25 @@ from app.deploy_changes import (
     DeployChangeIdentityHeld,
     propose_deploy_change,
 )
+from app.deploy_observations import (
+    DeployObservationRefused,
+    current_observation,
+    merge_commits_observed,
+    observations_for,
+    record_deploy_observation,
+)
 from app.events import record_event
-from app.models import ChangeAttempt, ChangeEvent, ChangeItem, WindowRun
+from app.models import ChangeAttempt, ChangeEvent, ChangeItem, DeployObservation, WindowRun
 from app.reconcile import reconcile
-from app.schemas import ClaimIn, DecisionIn, DeployChangeIn, OutcomeIn, SyncRequest, SyncSummary
+from app.schemas import (
+    ClaimIn,
+    DecisionIn,
+    DeployChangeIn,
+    DeployObservationIn,
+    OutcomeIn,
+    SyncRequest,
+    SyncSummary,
+)
 from app.sources import PROPOSED_SOURCES, ProposedSourceError
 from app.transitions import TransitionError
 from app.transitions import decide as _do_decide
@@ -78,6 +93,87 @@ def propose_deploy(body: DeployChangeIn, response: Response, db: Session = Depen
         raise HTTPException(status_code=409, detail=str(e)) from e
     response.status_code = 201 if created else 200
     return _item_dict(item)
+
+
+def _observation_dict(ob: DeployObservation) -> dict:
+    return {
+        "id": ob.id,
+        "item_id": ob.item_id,
+        "observation_key": ob.observation_key,
+        "merge_commit_sha": ob.merge_commit_sha,
+        "merged_at": ob.merged_at.isoformat(),
+        "verdict": ob.verdict,
+        "production_reached": ob.production_reached,
+        "workflow_path": ob.workflow_path,
+        "workflow_revision": ob.workflow_revision,
+        "workflow_attestation": ob.workflow_attestation,
+        "rollout_job": ob.rollout_job,
+        "rollout_job_conclusion": ob.rollout_job_conclusion,
+        "trigger_step": ob.trigger_step,
+        "trigger_step_conclusion": ob.trigger_step_conclusion,
+        "concurrent_run_id": ob.concurrent_run_id,
+        "run_id": ob.run_id,
+        "run_attempt": ob.run_attempt,
+        "run_url": ob.run_url,
+        "run_conclusion": ob.run_conclusion,
+        "run_concluded_at": ob.run_concluded_at.isoformat() if ob.run_concluded_at else None,
+        "observed_at": ob.observed_at.isoformat(),
+        "observed_by": ob.observed_by,
+        "recorded_at": ob.recorded_at.isoformat(),
+    }
+
+
+@router.post("/items/{item_id}/deploy-observation", status_code=201)
+def observe_deploy(
+    item_id: int,
+    body: DeployObservationIn,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Record what a watcher saw of the rollout this merge caused (ADR-0019 increment 2).
+
+    NOT an outcome, and deliberately not on the execution lifecycle: it writes no
+    `ChangeAttempt` and moves the item's status by exactly nothing. Increment 1 closed
+    `claim`/`outcome`/`handoff` to proposed sources — the doors that let something assert it had
+    APPLIED a change — and this route does not reopen them, because observing is not applying.
+    Whether the change is finished remains a decision.
+
+    201 when the observation is new, 200 when the same run attempt was already recorded.
+    """
+    it = db.get(ChangeItem, item_id)
+    if it is None:
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        observation, created = record_deploy_observation(db, it, body)
+    except DeployObservationRefused as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    response.status_code = 201 if created else 200
+    return _observation_dict(observation)
+
+
+@router.get("/items/{item_id}/deploy-observations")
+def list_deploy_observations(item_id: int, db: Session = Depends(get_db)) -> dict:
+    """Every rollout observation on one change, plus the ONE that answers how it went.
+
+    A separate route rather than a key on `_item_dict`, so the executor's list call carries no
+    new payload and the watcher's read surface stays one path wide.
+
+    `current` is served rather than left to the caller so the reduction over a contradicting
+    append-only history has exactly one definition. A client that reduced it locally would be
+    the second copy of a rule, which is the drift this estate has paid for four times over.
+    `merge_commits_observed` carries more than one entry only when something recorded an
+    observation about the wrong landing — reported, never refused.
+    """
+    if db.get(ChangeItem, item_id) is None:
+        raise HTTPException(status_code=404, detail="not found")
+    observations = observations_for(db, item_id)
+    current = current_observation(observations)
+    return {
+        "item_id": item_id,
+        "observations": [_observation_dict(ob) for ob in observations],
+        "current": _observation_dict(current) if current is not None else None,
+        "merge_commits_observed": merge_commits_observed(observations),
+    }
 
 
 @router.get("/items")

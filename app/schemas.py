@@ -1,8 +1,9 @@
 import re
 import unicodedata
+from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Unicode categories that carry no visible content: format characters (Cf — zero-width
 # space, BOM, soft hyphen, the bidi marks), the space and line/paragraph separators,
@@ -152,3 +153,188 @@ class DeployChangeIn(BaseModel):
     @classmethod
     def _criteria_are_not_blank(cls, v: list[str]) -> list[str]:
         return [_required_text(c, "acceptance_criteria[]") for c in v]
+
+
+# A git object name as GitHub serves it. Anchored and lower-case: `fullmatch` on a case-folded
+# value, so `ABC…`/`abc…` cannot become two spellings of one commit in the frozen-merge guard.
+_OBJECT_NAME = re.compile(r"[0-9a-f]{40}")
+
+# What a green run at the observed workflow revision actually attests. A closed vocabulary,
+# because the watcher's registry is the only thing that knows the answer and a free string here
+# would let an unclassified revision arrive wearing a strong word.
+# Two rungs and an unknown, deliberately not three. A first draft had `liveness_confirmed`
+# between "the webhook answered" and "the merged build is serving"; measurement removed it —
+# Coolify's swap is a rolling update taking 43-73s while brain's job polls 30s in and breaks on
+# the first 2xx, so the container that answered was the one already running. What each workflow
+# revision actually checked is transcribed in the watcher's registry, where a difference that
+# carries no guarantee belongs; the level a consumer keys on must not overstate.
+ATTESTATIONS = ("revision_confirmed", "rollout_unverified", "unknown")
+
+
+class DeployObservationIn(BaseModel):
+    """What a watcher saw of the rollout a deploying merge caused (ADR-0019 increment 2).
+
+    FACTS AND COORDINATES ONLY. There is no `verdict` field and extras are forbidden, so a
+    caller cannot both report `run_conclusion: "failure"` and assert the rollout succeeded — the
+    server derives the verdict from the conclusion. The coordinates exist so the row can be
+    re-derived from GitHub by anyone, later: change-manager has no GitHub egress, so this record
+    is asserted rather than observed here, and being re-checkable is the only honest mitigation
+    available short of per-caller identity.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Repeated from the item rather than taken on trust from the path, and checked against it.
+    # Increment 1's kill was a guard keyed on one caller-derived field while the write joined on
+    # another; naming the subject twice is what lets the server refuse a mismatch instead of
+    # believing whichever field it happened to read.
+    target_repository: str
+    pull_request_number: int = Field(gt=0, le=2_147_483_647, strict=True)
+
+    merge_commit_sha: str
+    # REQUIRED. GitHub populates `merge_commit_sha` on OPEN pull requests with a throwaway
+    # test-merge commit — a real, fetchable object that passes every shape check — so a shape
+    # check on the sha does not establish that anything merged. Item 44's own subject, PR #42,
+    # carries one today. Demanding the merge instant does not let this server verify the merge
+    # (it has no GitHub egress), but it turns an omission into an explicit assertion.
+    merged_at: datetime
+
+    workflow_path: str
+    workflow_revision: str | None = None
+    workflow_attestation: str
+
+    # The rollout job and its trigger step, by name and by conclusion.
+    rollout_job: str | None = None
+    rollout_job_conclusion: str | None = None
+    trigger_step: str | None = None
+    trigger_step_conclusion: str | None = None
+    concurrent_run_id: int | None = Field(
+        default=None, gt=0, le=9_223_372_036_854_775_807, strict=True
+    )
+
+    # A GitHub run id passed 2^31 long ago, so the ceiling here is int8's and the column is
+    # BigInteger. int4 would be accepted by SQLite and fail only on production Postgres.
+    run_id: int | None = Field(default=None, gt=0, le=9_223_372_036_854_775_807, strict=True)
+    run_attempt: int | None = Field(default=None, gt=0, le=2_147_483_647, strict=True)
+    run_url: str | None = None
+    run_conclusion: str | None = None
+    run_concluded_at: datetime | None = None
+
+    observed_at: datetime
+    actor: str  # caller-declared; see the attribution note in the ADR-0019 plan
+
+    @field_validator("target_repository")
+    @classmethod
+    def _observed_owner_slash_repo(cls, v: str) -> str:
+        text = _required_text(v, "target_repository")
+        if not _REPOSITORY.fullmatch(text):
+            raise ValueError("target_repository must be a GitHub 'owner/repo' name")
+        return text
+
+    @field_validator("merge_commit_sha")
+    @classmethod
+    def _merge_commit_is_an_object_name(cls, v: str) -> str:
+        text = _required_text(v, "merge_commit_sha").lower()
+        if not _OBJECT_NAME.fullmatch(text):
+            raise ValueError("merge_commit_sha must be a 40-character git object name")
+        return text
+
+    @field_validator("workflow_revision")
+    @classmethod
+    def _revision_is_an_object_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        text = _required_text(v, "workflow_revision").lower()
+        if not _OBJECT_NAME.fullmatch(text):
+            raise ValueError("workflow_revision must be a 40-character git object name")
+        return text
+
+    @field_validator("workflow_attestation")
+    @classmethod
+    def _attestation_is_known(cls, v: str) -> str:
+        text = _required_text(v, "workflow_attestation")
+        if text not in ATTESTATIONS:
+            raise ValueError(f"workflow_attestation must be one of {', '.join(ATTESTATIONS)}")
+        return text
+
+    @field_validator("workflow_path", "actor")
+    @classmethod
+    def _observation_text_is_not_blank(cls, v: str, info) -> str:
+        return _required_text(v, info.field_name)
+
+    @field_validator("rollout_job", "trigger_step")
+    @classmethod
+    def _optional_names_are_not_blank(cls, v: str | None, info) -> str | None:
+        return None if v is None else _required_text(v, info.field_name)
+
+    @field_validator("rollout_job_conclusion", "trigger_step_conclusion")
+    @classmethod
+    def _job_conclusions_are_tokens(cls, v: str | None, info) -> str | None:
+        if v is None:
+            return None
+        text = _required_text(v, info.field_name)
+        if len(text) > 64 or not re.fullmatch(r"[a-z_]+", text):
+            raise ValueError(f"{info.field_name} must be a short lower-case conclusion token")
+        return text
+
+    @field_validator("observed_at", "merged_at")
+    @classmethod
+    def _required_instants_carry_an_offset(cls, v: datetime, info) -> datetime:
+        if v.tzinfo is None:
+            raise ValueError(f"{info.field_name} must carry a timezone offset")
+        return v
+
+    @field_validator("run_conclusion")
+    @classmethod
+    def _conclusion_is_a_token(cls, v: str | None) -> str | None:
+        """Bounded, but NOT a closed vocabulary.
+
+        GitHub may add a conclusion after this code was written. Refusing it would lose the
+        record entirely, so the raw string is stored verbatim and the derived verdict degrades
+        to `unknown` — which is inconclusive, and inconclusive licenses nothing.
+        """
+        if v is None:
+            return None
+        text = _required_text(v, "run_conclusion")
+        if len(text) > 64 or not re.fullmatch(r"[a-z_]+", text):
+            raise ValueError("run_conclusion must be a short lower-case GitHub conclusion token")
+        return text
+
+    @field_validator("run_concluded_at")
+    @classmethod
+    def _optional_instant_carries_an_offset(cls, v: datetime | None) -> datetime | None:
+        """A naive datetime here becomes a TypeError deep in a comparison, which is a bare 500.
+
+        Only handled exception types reach a clean response; everything else surfaces unhandled.
+        So the offset is required at the edge, where it is a 422.
+        """
+        if v is not None and v.tzinfo is None:
+            raise ValueError("run_concluded_at must carry a timezone offset")
+        return v
+
+    @model_validator(mode="after")
+    def _the_run_is_present_or_absent_as_a_whole(self) -> "DeployObservationIn":
+        """A run is observed completely or not at all, and only once it has SETTLED.
+
+        Two shapes are admissible and nothing between them: a concluded run (id, attempt and
+        conclusion all present), or no run at all (all three absent — the rollout never ran).
+        A run id with no conclusion is a run still going, which is not a verdict; recording it
+        would put a row meaning "ask again" into an append-only table.
+        """
+        has_run = self.run_id is not None
+        if has_run and (self.run_attempt is None or self.run_conclusion is None):
+            raise ValueError(
+                "an observed run must carry run_attempt and run_conclusion: "
+                "a run that has not concluded is not a verdict"
+            )
+        if not has_run and (
+            self.run_attempt is not None
+            or self.run_conclusion is not None
+            or self.run_url is not None
+            or self.run_concluded_at is not None
+            or self.rollout_job_conclusion is not None
+            or self.trigger_step_conclusion is not None
+            or self.concurrent_run_id is not None
+        ):
+            raise ValueError("without run_id there is no run, so no run detail may be sent")
+        return self
