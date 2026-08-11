@@ -83,12 +83,19 @@ def _api_routes() -> list[tuple[str, str]]:
 
 
 @pytest.mark.parametrize("scope", NARROW_SCOPES)
-def test_no_narrow_scope_can_move_a_change_records_status(scope: str) -> None:
+def test_no_narrow_scope_can_choose_a_change_records_status(scope: str) -> None:
     """Stated in ROW terms, not route terms.
 
     Increment 1's kill was a guard keyed on the right concept and the wrong field. The route list
     is only today's spelling of the property; what must be true is that no narrow credential can
-    move a record's status or assert that something executed it.
+    CHOOSE a record's status or assert that something executed it.
+
+    RENAMED BY ADR-0019 INCREMENT 5a, and the old name is the point. It was
+    `..._can_move_a_change_records_status`, and "move" became false the moment the proposal
+    ingress started running the deploy policy: `propose` reaches the one route that can put a
+    record into `approved`. Stage-two review found the module docstring and the exclusion comment
+    still asserting the old sentence; the test's own name and docstring were asserting it too, one
+    file over from the finding. A name is a claim.
     """
     assert not (SCOPE_ROUTES[scope] & CALLER_CHOSEN_STATUS_ROUTES), (
         f"the '{scope}' scope reaches {sorted(SCOPE_ROUTES[scope] & CALLER_CHOSEN_STATUS_ROUTES)}"
