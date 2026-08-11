@@ -38,6 +38,10 @@ _READ_ROUTES: Final = frozenset(
         ("GET", "/api/items/{item_id}"),
         ("GET", "/api/items/{item_id}/deploy-observations"),
         ("GET", "/api/events"),
+        # What a human has pre-approved, and the conditions the landing party must evaluate
+        # because this service cannot (ADR-0019 increment 5). Standing policy, no secret,
+        # and a caller that could not read it could only fail closed.
+        ("GET", "/api/deploy-policy"),
     }
 )
 

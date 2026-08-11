@@ -69,6 +69,16 @@ class ChangeItem(Base):
     # lacking them, which is the reason ADR-0019 records them at all.
     acceptance_criteria: Mapped[list | None] = mapped_column(JSON)
     rollback_plan: Mapped[dict | None] = mapped_column(JSON)
+    # WHICH VERSION OF THE DEPLOY POLICY APPROVED THIS RECORD (ADR-0019 increment 5). Written by
+    # the server, together with `status`, `decided_by` and `decided_at`, in one transaction and
+    # from one place. Null on every derived item and on any deploy record that has not conformed.
+    #
+    # It is stored rather than recomputed, and that is the property adversarial review insisted
+    # on: a subject must carry the revision it was decided under, or "which version permitted this,
+    # and does it actually permit it?" has no answer once the policy has moved. It is what
+    # `landing_ledger`'s rule pin already does for a landing, in the same estate, for the same
+    # reason.
+    policy_version: Mapped[int | None] = mapped_column(Integer)
 
     @property
     def has_authorized_executor(self) -> bool:

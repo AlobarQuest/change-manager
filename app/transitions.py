@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.events import record_event
 from app.models import ChangeItem
+from app.sources import PROPOSED_SOURCES
 
 
 class TransitionError(Exception):
@@ -19,7 +20,23 @@ def decide(
     event_type: str,
     detail: str | None = None,
 ) -> None:
-    """Apply a human decision: set status + decider + history event. We commit."""
+    """Apply a human decision: set status + decider + history event. We commit.
+
+    APPROVING A PROPOSED CHANGE IS NOT A DECISION ANY CALLER MAKES (ADR-0019 increment 5).
+    The guard is here, on the write, rather than only on the routes, because this function
+    has six callers -- five API verbs and the GUI -- and a guard placed on the doors is a
+    guard a seventh caller does not inherit. This repository learned that in increment 1,
+    where every guard was keyed on `source` while the write joined on `identity`.
+
+    Only the grant is refused. The vetoes reach this function with a different
+    `new_status` and are untouched, which is the asymmetry Devon asked for: policy grants,
+    a human revokes.
+    """
+    if new_status == "approved" and item.source in PROPOSED_SOURCES:
+        raise TransitionError(
+            f"'{item.source}' changes are approved by policy conformance, not by a caller "
+            f"(item {item.id})"
+        )
     prev = item.status
     item.status = new_status
     item.decided_by = actor

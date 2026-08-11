@@ -6,11 +6,13 @@
    &middot; <strong>Risk:</strong> {{ it.risk }} &middot; <strong>Kind:</strong> {{ it.kind }}</p>
 <p><strong>Why:</strong> {{ it.reasoning }}</p>
 {% if it.note %}<p><strong>Auto-fix held:</strong> {{ it.note }}</p>{% endif %}
-{% if it.status == "blocked" or (it.status == "approved" and not it.has_authorized_executor) %}
+{% if it.status == "blocked" or (not it.has_authorized_executor and it.status in ["pending", "deferred", "approved"]) %}
 {# Human-terminal actions so a blocked item is never a dead-end. NOT approve —
-   that would re-queue the executor that already blocked it. The same applies to an
-   approved change no executor will ever claim: approval is the natural click and it
-   must not be the last one available. #}
+   that would re-queue the executor that already blocked it. The same applies to a
+   change no executor will ever claim, and since ADR-0019 increment 5 that record
+   spends most of its life PENDING rather than approved: policy grants approval, so a
+   record awaiting ratification — or one whose criteria moved out from under it — must
+   still be closable by the human who is the only one who can retire it. #}
 <p>
   <form method="post" action="/items/{{ it.id }}/resolve" style="display:inline"><button type="submit">Resolve</button></form>
   <form method="post" action="/items/{{ it.id }}/wontfix" style="display:inline"><button type="submit">Won't-fix</button></form>

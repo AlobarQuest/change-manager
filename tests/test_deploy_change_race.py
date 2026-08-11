@@ -71,8 +71,13 @@ def test_losing_the_race_with_an_identical_proposal_replays(file_engine):
 
 
 def test_losing_the_race_with_a_divergent_proposal_still_conflicts(file_engine):
-    """The retry path must not become a way to have a divergence accepted."""
-    winner = {**PAYLOAD, "acceptance_criteria": ["something else entirely"]}
+    """The retry path must not become a way to have a divergence accepted.
+
+    Keyed on an ASSERTED fact. ADR-0019 increment 5 made the two derived facts refresh
+    rather than conflict, so a divergence in `acceptance_criteria` no longer proves this
+    property and a control written on it would pass whatever the race did.
+    """
+    winner = {**PAYLOAD, "reasoning": "a different reason entirely"}
     with pytest.raises(DeployChangeConflict):
         _race(file_engine, PAYLOAD, winner)
     with Session(file_engine) as s:

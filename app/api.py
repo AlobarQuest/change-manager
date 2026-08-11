@@ -19,7 +19,10 @@ from app.deploy_observations import (
     observations_for,
     record_deploy_observation,
 )
+from app.deploy_policy import current as current_policy
+from app.deploy_policy import landing_conditions_dict, objections
 from app.events import record_event
+from app.guards import require_executor, require_policy_approver
 from app.models import ChangeAttempt, ChangeEvent, ChangeItem, DeployObservation, WindowRun
 from app.reconcile import reconcile
 from app.schemas import (
@@ -68,6 +71,16 @@ def _item_dict(it: ChangeItem) -> dict:
         "change_class": it.change_class,
         "acceptance_criteria": it.acceptance_criteria,
         "rollback_plan": it.rollback_plan,
+        # Which pinned policy version approved this record. STORED, so an approval stays
+        # re-derivable after the policy has moved on.
+        "policy_version": it.policy_version,
+        # Why it does not currently conform, recomputed here. This is EXPLANATORY and never
+        # permissive: `status` is the stored decision, and nothing downstream may read this
+        # list as an approval. It exists so an operator looking at a pending record can see
+        # what a human would have to ratify, instead of diffing two artifacts by hand.
+        "policy_objections": list(objections(current_policy(), it))
+        if it.source in PROPOSED_SOURCES
+        else [],
     }
 
 
@@ -247,24 +260,35 @@ def list_events(
     }
 
 
-def _require_executor(it: ChangeItem) -> None:
-    """Refuse every door into the EXECUTION lifecycle for a proposed change.
+@router.get("/deploy-policy")
+def deploy_policy() -> dict:
+    """What a human has pre-approved for a deploying merge, and the conditions on the act.
 
-    The window executor makes THREE calls, not two — it lists, claims, and then posts
-    an outcome (`run-window.ts` getApproved/claim/postOutcome, and `security-executor.ts`
-    likewise). Guarding only `claim` leaves `outcome` reachable on an unclaimed item,
-    which writes a `ChangeAttempt` and an `attempt_done` event asserting that an agent
-    applied a deploy nothing performed — and that event ships to the tamper-evident
-    factory-events chain. `outcome` is unreachable in practice only because the
-    executor skips an item whose claim failed, and this repository has twice now
-    written down that "unreachable because its only caller checks first" is not a
-    property a future caller inherits.
+    THIS ROUTE EXISTS SO NOBODY HOLDS A SECOND COPY. The conditions under `landing` are
+    about the CHANGE and about the moment -- the update type, whether the checks a landing
+    rests on ran against the current base -- and this service can evaluate neither: it has
+    no GitHub egress and cannot attest a caller, so a term here over caller-declared facts
+    would be policy resting on something it cannot check. They are declared here, where a
+    human edits them and where they are versioned, and evaluated by the party that can read
+    GitHub, at the moment of the act.
+
+    ADR-0019 increment 3 settled the same question in the other direction and its answer is
+    the shape being followed: one holder, the only readable form is what the running process
+    serves, and nobody keeps a copy.
+
+    Read-scoped: it is a statement of standing policy, carries no secret, and a caller that
+    could not read it could only fail closed.
     """
-    if not it.has_authorized_executor:
-        raise HTTPException(
-            status_code=409,
-            detail=f"'{it.source}' changes have no authorized executor (item {it.id})",
-        )
+    policy = current_policy()
+    return {
+        "version": policy.version,
+        "decided": policy.decided,
+        "rationale": policy.rationale,
+        "repositories": sorted(policy.repositories),
+        "change_classes": sorted(policy.change_classes),
+        "risks": sorted(policy.risks),
+        "landing": landing_conditions_dict(policy),
+    }
 
 
 # outcome → resulting item status + the event type to record
@@ -281,7 +305,7 @@ def claim(item_id: int, body: ClaimIn | None = None, db: Session = Depends(get_d
     it = db.get(ChangeItem, item_id)
     if it is None:
         raise HTTPException(status_code=404, detail="not found")
-    _require_executor(it)
+    require_executor(it)
     if it.status != "approved":
         raise HTTPException(status_code=409, detail=f"not approved (status={it.status})")
     it.status = "in_progress"
@@ -302,7 +326,7 @@ def outcome(item_id: int, body: OutcomeIn, db: Session = Depends(get_db)) -> dic
     it = db.get(ChangeItem, item_id)
     if it is None:
         raise HTTPException(status_code=404, detail="not found")
-    _require_executor(it)
+    require_executor(it)
     if body.outcome not in _OUTCOME_STATUS:
         raise HTTPException(status_code=422, detail=f"unknown outcome {body.outcome}")
     new_status, event_type = _OUTCOME_STATUS[body.outcome]
@@ -346,6 +370,15 @@ def _decide(db: Session, item_id: int, body: DecisionIn, new_status: str, event_
 
 @router.post("/items/{item_id}/approve")
 def approve(item_id: int, body: DecisionIn, db: Session = Depends(get_db)) -> dict:
+    it = db.get(ChangeItem, item_id)
+    if it is None:
+        raise HTTPException(status_code=404, detail="not found")
+    # Guarded HERE and in `transitions.decide`, and the second one is the load-bearing one.
+    # This repository's increment-1 kill was a guard keyed on the right concept and the
+    # wrong field, and the lesson generalises: the route is the readable refusal, the write
+    # path is the guarantee. Every other caller of `decide` -- the four other verbs, the
+    # GUI -- reaches the same check without needing to remember it.
+    require_policy_approver(it)
     return _decide(db, item_id, body, "approved", "approved")
 
 
@@ -385,7 +418,7 @@ def handoff(item_id: int, body: DecisionIn, db: Session = Depends(get_db)) -> di
         raise HTTPException(status_code=404, detail="not found")
     # A proposed item carries no handoff brief, so `handed_off` would park it in a
     # status no lane owns — and `revert_stale_handoffs` is forbidden from rescuing it.
-    _require_executor(it)
+    require_executor(it)
     try:
         _do_hand_off(db, it, actor=body.actor, detail=body.detail)
     except TransitionError as e:

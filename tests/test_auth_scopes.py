@@ -337,3 +337,21 @@ def test_an_unset_scope_secret_grants_nothing(client: TestClient) -> None:
             auth.settings.m2m_token_propose,
             auth.settings.m2m_token_observe,
         ) = before
+
+
+def test_the_read_scope_can_reach_the_deploy_policy(client, scoped, db):
+    """ADR-0019 increment 5. The landing party reads its conditions from here.
+
+    Without this the route is reachable only by the full bearer, so the orchestrator would
+    have to hold the widest credential this service has in order to ask what a human had
+    pinned — which is the shape increment 4's split exists to prevent. The control is the
+    line below: an unrecognised bearer still gets nothing.
+    """
+    assert client.get("/api/deploy-policy", headers=_bearer(TOKENS["read"])).status_code == 200
+    assert client.get("/api/deploy-policy", headers=_bearer("not-a-token")).status_code == 401
+
+
+def test_no_narrow_scope_can_reach_the_deploy_policy_with_a_write(client, scoped):
+    """It is a GET and only a GET; the method is part of the key."""
+    for token in TOKENS.values():
+        assert client.post("/api/deploy-policy", headers=_bearer(token)).status_code in (403, 405)

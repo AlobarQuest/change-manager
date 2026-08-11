@@ -9,6 +9,7 @@ from app.deploy_observations import (
     merge_commits_observed,
     observations_for,
 )
+from app.guards import require_executor, require_policy_approver
 from app.models import ChangeEvent, ChangeItem, WindowRun
 from app.templates_env import templates
 from app.transitions import TransitionError, decide, hand_off
@@ -96,13 +97,28 @@ def item_action(
         except TransitionError as e:
             raise HTTPException(status_code=409, detail=str(e)) from e
     elif action == "handoff":
+        # The API twin has refused this for a proposed change since increment 1; this door
+        # did not, and the omission was live in production until ADR-0019 increment 5's
+        # review found it. The button is merely HIDDEN here -- `_row.html` renders it only
+        # when a handoff brief exists -- and a hidden button is not a closed door, which
+        # this repository has already written down twice. A proposed change carries no
+        # brief, so `handed_off` would park it in a status no lane owns.
+        require_executor(it)
         try:
             hand_off(db, it, actor=user)
         except TransitionError as e:
             raise HTTPException(status_code=409, detail=str(e)) from e
     elif action in _ACTIONS:
         new_status, event_type = _ACTIONS[action]
-        decide(db, it, actor=user, new_status=new_status, event_type=event_type)
+        # `decide` refuses an approval of a proposed change on its own, so this is the
+        # readable refusal rather than the guarantee. Both are wanted: the guarantee has to
+        # be on the write, and the operator has to be told why the button did nothing.
+        if action == "approve":
+            require_policy_approver(it)
+        try:
+            decide(db, it, actor=user, new_status=new_status, event_type=event_type)
+        except TransitionError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
     else:
         raise HTTPException(status_code=400, detail=f"unknown action {action}")
     if request.headers.get("HX-Request"):
