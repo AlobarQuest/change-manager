@@ -130,10 +130,18 @@ def test_status_moving_routes_is_complete_against_the_live_table() -> None:
 
 
 def test_a_route_no_scope_lists_is_reachable_only_by_the_full_credential() -> None:
-    """Completeness, over the live table, so a route added later fails closed.
+    """That the enumeration SEES the whole application — not that the scopes are correct.
 
-    `/api/health` is expected in the unlisted set: it is unauthenticated by design, and its
-    presence here is the proof that this enumeration sees application-level routes at all.
+    **This test does less than its first name suggested, and the difference matters.** `unlisted`
+    is *defined* as the pairs not in the union of `SCOPE_ROUTES`, so looping over it to assert they
+    are in no scope is a tautology: granting every narrow scope `POST /api/items/{id}/approve` was
+    demonstrated to leave it green. What it genuinely asserts is the `/api/health` line — that this
+    enumeration reaches routes registered on the APPLICATION rather than on the router, which is
+    the blindness `_api_routes` documents.
+
+    The scopes themselves are protected by `test_no_narrow_scope_can_move_a_change_records_status`
+    and, derived from the live table so it cannot pass vacuously,
+    `test_no_narrow_scope_reaches_any_write_except_the_two_it_exists_for`.
     """
     listed: set[tuple[str, str]] = set()
     for routes in SCOPE_ROUTES.values():
