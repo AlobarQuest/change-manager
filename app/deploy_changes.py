@@ -200,13 +200,26 @@ def _apply_policy(db: Session, item: ChangeItem) -> None:
         )
         return
 
-    if not found and item.status == "approved" and item.policy_version != policy.version:
+    if (
+        not found
+        and item.status == "approved"
+        and item.policy_version is not None
+        and item.policy_version != policy.version
+    ):
         # STILL CONFORMS, UNDER A NEWER VERSION. Without this branch the record is stranded on the
         # version that approved it: the branch above needs `status != "approved"` and the one
         # below needs an objection, so a conforming approved record matches NEITHER -- and there
         # is no other route, because `approve` is refused to every caller including the full
         # bearer and the identity is held so no fresh record can be proposed. The landing binds an
         # approval to the version in force, so a stranded record becomes permanently unlandable.
+        #
+        # `policy_version is not None` IS THE LOAD-BEARING CLAUSE, and leaving it out was the
+        # defect two independent reviews found. `None != 2` is true, so without it a record a
+        # HUMAN approved before any policy existed -- production item 44, exactly -- would be
+        # restamped as policy-approved, its approver overwritten, and an `approved` event claiming
+        # conformance would enter the tamper-evident chain. That is the one record shape the
+        # landing party explicitly refuses, converted into a landable one on this side, where it
+        # cannot see the difference. A record with no version needs a person, not a re-stamp.
         #
         # It is a NEW GRANT and emits the event that says so. A version bump is a fresh human
         # decision about what may land unattended, and `approved` is the only thing this service

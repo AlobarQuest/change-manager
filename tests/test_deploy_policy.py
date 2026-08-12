@@ -565,3 +565,27 @@ def test_a_record_that_stops_conforming_is_still_revoked_rather_than_re_stamped(
 
     db.refresh(row)
     assert row.status == "pending" and row.policy_version is None
+
+
+def test_a_record_a_HUMAN_approved_is_never_restamped_as_policy_approved(client, m2m, db):
+    """`None != 2` is true, so the re-approval branch needs an explicit not-None clause.
+
+    Without it, the one record shape the landing party refuses -- approved by a person before any
+    policy existed, which is production item 44 -- would be converted into a policy approval here,
+    its approver overwritten, and an `approved` event claiming conformance would enter the
+    tamper-evident chain. The landing party cannot see the difference; this is where it is kept.
+    """
+    item_id = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()["id"]
+    row = db.get(ChangeItem, item_id)
+    assert row is not None
+    row.policy_version = None
+    row.decided_by = "hq-correction"
+    db.commit()
+    before = len(_events(db, item_id, "approved"))
+
+    client.post("/api/deploy-changes", json=conformant(), headers=m2m)
+
+    db.refresh(row)
+    assert row.policy_version is None, "a human's approval was restamped as a policy approval"
+    assert row.decided_by == "hq-correction", "a human's name was overwritten"
+    assert len(_events(db, item_id, "approved")) == before
