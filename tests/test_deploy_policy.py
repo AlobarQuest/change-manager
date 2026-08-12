@@ -493,3 +493,75 @@ def test_a_drift_record_carries_no_landing_conditions(client, m2m, db):
     db.commit()
     served = client.get("/api/items?source=security", headers=m2m).json()
     assert served and served[0]["landing_conditions"] is None
+
+
+def test_a_record_that_still_conforms_is_re_approved_under_the_NEWER_version(client, m2m, db):
+    """THE branch without which a version bump is permanent brickage.
+
+    A record approved under version 1 that still conforms under version 2 matches neither the
+    approve branch (which needs a status that is not already approved) nor the revoke branch
+    (which needs an objection). There is no other route: `approve` is refused to every caller
+    including the full bearer, and the identity is held so no fresh record can be proposed. The
+    landing binds an approval to the version IN FORCE, so a stranded record is unlandable forever.
+    """
+    item_id = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()["id"]
+    row = db.get(ChangeItem, item_id)
+    assert row is not None
+    row.policy_version = 1
+    db.commit()
+
+    replay = client.post("/api/deploy-changes", json=conformant(), headers=m2m)
+
+    assert replay.status_code == 200
+    assert replay.json()["policy_version"] == CURRENT_VERSION
+    db.refresh(row)
+    assert row.status == "approved" and row.decided_by == POLICY_ACTOR
+
+
+def test_the_re_approval_enters_the_chain_as_a_grant_of_its_own(client, m2m, db):
+    """A version bump is a fresh human decision about what may land unattended, and `approved` is
+    the only thing this service emits that becomes an authority grant. Re-stamping the column
+    silently would leave the grant under the newer version absent from the chain while the one it
+    replaced is in it."""
+    item_id = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()["id"]
+    row = db.get(ChangeItem, item_id)
+    assert row is not None
+    row.policy_version = 1
+    db.commit()
+    before = len(_events(db, item_id, "approved"))
+
+    client.post("/api/deploy-changes", json=conformant(), headers=m2m)
+
+    approvals = _events(db, item_id, "approved")
+    assert len(approvals) == before + 1
+    assert f"v{CURRENT_VERSION}" in (approvals[-1].detail or "")
+
+
+def test_a_record_already_on_the_current_version_is_not_re_stamped(client, m2m, db):
+    """The control. Without it the branch above would pass for one that emits a grant on every
+    pass -- an authority-grant row per hour, for a decision nobody made."""
+    item_id = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()["id"]
+    before = len(_events(db, item_id, "approved"))
+
+    client.post("/api/deploy-changes", json=conformant(), headers=m2m)
+
+    assert len(_events(db, item_id, "approved")) == before
+
+
+def test_a_record_that_stops_conforming_is_still_revoked_rather_than_re_stamped(
+    client, m2m, db, deploy_payload
+):
+    """The other control: the new branch must not swallow the revocation. An approved record on an
+    old version whose shape no longer conforms goes back to pending, not forward to the new
+    version."""
+    item_id = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()["id"]
+    row = db.get(ChangeItem, item_id)
+    assert row is not None
+    row.policy_version = 1
+    row.risk = "reckless"
+    db.commit()
+
+    client.post("/api/deploy-changes", json=conformant(risk="reckless"), headers=m2m)
+
+    db.refresh(row)
+    assert row.status == "pending" and row.policy_version is None

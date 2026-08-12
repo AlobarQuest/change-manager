@@ -200,6 +200,38 @@ def _apply_policy(db: Session, item: ChangeItem) -> None:
         )
         return
 
+    if not found and item.status == "approved" and item.policy_version != policy.version:
+        # STILL CONFORMS, UNDER A NEWER VERSION. Without this branch the record is stranded on the
+        # version that approved it: the branch above needs `status != "approved"` and the one
+        # below needs an objection, so a conforming approved record matches NEITHER -- and there
+        # is no other route, because `approve` is refused to every caller including the full
+        # bearer and the identity is held so no fresh record can be proposed. The landing binds an
+        # approval to the version in force, so a stranded record becomes permanently unlandable.
+        #
+        # It is a NEW GRANT and emits the event that says so. A version bump is a fresh human
+        # decision about what may land unattended, and `approved` is the only thing this service
+        # emits that enters the estate's tamper-evident chain -- re-stamping the column silently
+        # would leave the grant under version 2 absent from it while the one under version 1 is
+        # there.
+        previous = item.policy_version
+        item.decided_by = POLICY_ACTOR
+        item.decided_at = now
+        item.policy_version = policy.version
+        record_event(
+            db,
+            item,
+            actor=POLICY_ACTOR,
+            event_type="approved",
+            from_status="approved",
+            to_status="approved",
+            detail=(
+                f"still conforms under deploy policy v{policy.version}, pinned {policy.decided}; "
+                f"re-approved from v{previous} rather than left on the version that has been "
+                "superseded"
+            ),
+        )
+        return
+
     if found and item.status == "approved":
         # Approved under criteria that have since moved. Leaving it approved would let it
         # assert conformance to something nobody ratified, so it goes back to pending and

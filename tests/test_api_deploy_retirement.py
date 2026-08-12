@@ -122,7 +122,13 @@ def test_an_observation_outside_the_vocabulary_is_refused(client, m2m, record, d
 
 def test_a_drift_record_cannot_be_retired_by_this_route(client, m2m, db):
     """The general resolve verb stays the full credential's. This one reaches deploy records
-    only, which is half of why a narrow credential may hold it."""
+    only, which is half of why a narrow credential may hold it.
+
+    It carries the SAME pull request number the retirement names, so the source guard is the only
+    one that can refuse it. Without that the subject guard refuses first and this test passes for
+    a reason unrelated to its name -- demonstrated, by a mutation deleting the source guard and
+    surviving.
+    """
     item = ChangeItem(
         identity="prod::some-rule::abc",
         instance="prod",
@@ -134,6 +140,8 @@ def test_a_drift_record_cannot_be_retired_by_this_route(client, m2m, db):
         last_seen_at=datetime.now(UTC),
         reasoning="something drifted",
         risk="caution",
+        target_repository="alobarquest/change-manager",
+        pull_request_number=42,
         plan={},
     )
     db.add(item)
