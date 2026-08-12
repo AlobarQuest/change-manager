@@ -16,7 +16,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.scopes import NARROW_SCOPES, SCOPE_ROUTES, STATUS_MOVING_ROUTES
+from app.scopes import (
+    CALLER_CHOSEN_STATUS_ROUTES,
+    NARROW_SCOPES,
+    PROPOSE,
+    SCOPE_ROUTES,
+    STATUS_MOVING_ROUTES,
+)
 
 FULL_TOKEN = "full-tok"
 TOKENS = {"read": "read-tok", "propose": "propose-tok", "observe": "observe-tok"}
@@ -77,16 +83,38 @@ def _api_routes() -> list[tuple[str, str]]:
 
 
 @pytest.mark.parametrize("scope", NARROW_SCOPES)
-def test_no_narrow_scope_can_move_a_change_records_status(scope: str) -> None:
+def test_no_narrow_scope_can_choose_a_change_records_status(scope: str) -> None:
     """Stated in ROW terms, not route terms.
 
     Increment 1's kill was a guard keyed on the right concept and the wrong field. The route list
     is only today's spelling of the property; what must be true is that no narrow credential can
-    move a record's status or assert that something executed it.
+    CHOOSE a record's status or assert that something executed it.
+
+    RENAMED BY ADR-0019 INCREMENT 5a, and the old name is the point. It was
+    `..._can_move_a_change_records_status`, and "move" became false the moment the proposal
+    ingress started running the deploy policy: `propose` reaches the one route that can put a
+    record into `approved`. Stage-two review found the module docstring and the exclusion comment
+    still asserting the old sentence; the test's own name and docstring were asserting it too, one
+    file over from the finding. A name is a claim.
     """
-    assert not (SCOPE_ROUTES[scope] & STATUS_MOVING_ROUTES), (
-        f"the '{scope}' scope reaches {sorted(SCOPE_ROUTES[scope] & STATUS_MOVING_ROUTES)}"
+    assert not (SCOPE_ROUTES[scope] & CALLER_CHOSEN_STATUS_ROUTES), (
+        f"the '{scope}' scope reaches {sorted(SCOPE_ROUTES[scope] & CALLER_CHOSEN_STATUS_ROUTES)}"
     )
+
+
+@pytest.mark.parametrize("scope", NARROW_SCOPES)
+def test_the_only_status_a_narrow_scope_can_move_is_the_one_policy_decides(scope: str) -> None:
+    """The exception is NAMED and exactly one entry wide, so it cannot silently grow.
+
+    ADR-0019 increment 5a: `propose` reaches the proposal ingress, and that ingress runs the
+    deploy policy — so it CAN cause an approval. The guard above is keyed on the narrower
+    property that survives (no narrow credential picks a status). This one bounds the gap, so
+    that a second status-moving route landing in a narrow scope is a failure rather than a
+    quietly widened exception.
+    """
+    reached = SCOPE_ROUTES[scope] & STATUS_MOVING_ROUTES
+    expected = {("POST", "/api/deploy-changes")} if scope == PROPOSE else set()
+    assert reached == expected, f"the '{scope}' scope reaches {sorted(reached)}"
 
 
 def test_every_status_moving_route_is_a_route_this_app_actually_serves() -> None:
@@ -109,14 +137,19 @@ def test_status_moving_routes_is_complete_against_the_live_table() -> None:
     the judgment is pinned by nothing — the estate's own lesson from an eight-hop chain whose
     fixtures all derived themselves from the list they were meant to be checking.
 
-    Every write under `/api` moves a change record's status EXCEPT the four named below, and each
+    Every write under `/api` moves a change record's status EXCEPT those named below, and each
     exclusion is a claim about behaviour rather than a convenience.
+
+    `POST /api/deploy-changes` was excluded here until ADR-0019 increment 5a, on the claim that it
+    "never writes to an existing row -- identical facts replay, different facts 409". That claim
+    had three clauses and the increment falsified all three: it refreshes the derived facts on an
+    existing row, differing derived facts no longer 409, and it moves the status in both
+    directions. An exclusion is a claim about behaviour, so it has to be re-read when the
+    behaviour changes -- this one was green while the propose scope held the only route in the
+    application that can put a record into `approved`.
     """
     writes = {(method, path) for method, path in _api_routes() if method != "GET"}
     not_status_moving = {
-        # Creates a record; cannot touch one that exists (`propose_deploy_change` never writes to
-        # an existing row -- identical facts replay, different facts 409).
-        ("POST", "/api/deploy-changes"),
         # Appends an observation. Writes no ChangeAttempt and moves status by exactly nothing.
         ("POST", "/api/items/{item_id}/deploy-observation"),
         # Sets `pr_url` and records a `pr_linked` event. Not a status transition -- but it IS a
@@ -337,3 +370,38 @@ def test_an_unset_scope_secret_grants_nothing(client: TestClient) -> None:
             auth.settings.m2m_token_propose,
             auth.settings.m2m_token_observe,
         ) = before
+
+
+def test_the_read_scope_can_reach_the_deploy_policy(client, scoped, db):
+    """ADR-0019 increment 5. The landing party reads its conditions from here.
+
+    Without this the route is reachable only by the full bearer, so the orchestrator would
+    have to hold the widest credential this service has in order to ask what a human had
+    pinned — which is the shape increment 4's split exists to prevent. The control is the
+    line below: an unrecognised bearer still gets nothing.
+    """
+    assert client.get("/api/deploy-policy", headers=_bearer(TOKENS["read"])).status_code == 200
+    assert client.get("/api/deploy-policy", headers=_bearer("not-a-token")).status_code == 401
+
+
+def test_no_narrow_scope_can_reach_the_deploy_policy_with_a_write(client, scoped):
+    """It is a GET and only a GET; the method is part of the key."""
+    for token in TOKENS.values():
+        assert client.post("/api/deploy-policy", headers=_bearer(token)).status_code in (403, 405)
+
+
+def test_the_policy_exception_is_exactly_one_route_wide() -> None:
+    """`CALLER_CHOSEN_STATUS_ROUTES` states a judgment, so it needs its own cross-check.
+
+    A mutation caught this: emptying it left every scope test green, because an empty set
+    trivially satisfies "intersects nothing" — the identical failure this module already
+    records for `STATUS_MOVING_ROUTES`, reproduced one constant later by the fix for it. A
+    derived set is not self-guarding just because it is derived; what is derived is its
+    CONTENT, and what needs pinning is the size and direction of the subtraction.
+    """
+    exception = STATUS_MOVING_ROUTES - CALLER_CHOSEN_STATUS_ROUTES
+    assert exception == {("POST", "/api/deploy-changes")}, (
+        f"the policy exception is no longer exactly the proposal ingress: {sorted(exception)}"
+    )
+    assert CALLER_CHOSEN_STATUS_ROUTES < STATUS_MOVING_ROUTES
+    assert len(CALLER_CHOSEN_STATUS_ROUTES) == len(STATUS_MOVING_ROUTES) - 1

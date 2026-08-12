@@ -38,12 +38,24 @@ _READ_ROUTES: Final = frozenset(
         ("GET", "/api/items/{item_id}"),
         ("GET", "/api/items/{item_id}/deploy-observations"),
         ("GET", "/api/events"),
+        # What a human has pre-approved, and the conditions the landing party must evaluate
+        # because this service cannot (ADR-0019 increment 5). Standing policy, no secret,
+        # and a caller that could not read it could only fail closed.
+        ("GET", "/api/deploy-policy"),
     }
 )
 
 # The scopes a narrow credential may hold. Each is READ plus at most one write, and no write here
-# touches the DECISION lifecycle (approve/defer/wontfix/resolve/reactivate) or the EXECUTION one
-# (claim/outcome/handoff). That is the whole point of the file.
+# lets the CALLER CHOOSE a record's status: the DECISION lifecycle
+# (approve/defer/wontfix/resolve/reactivate) and the EXECUTION one (claim/outcome/handoff) are
+# both out of reach. That is the whole point of the file.
+#
+# CORRECTED BY ADR-0019 INCREMENT 5a. This used to say no write here "touches the DECISION
+# lifecycle", and that became false the moment the proposal ingress started running the deploy
+# policy: `propose` can now cause a record to be approved. It cannot pick that outcome — policy
+# decides, over a shape a human pinned in advance — which is a real and narrower property, and
+# saying the old sentence instead would have left the one file whose subject is "which credential
+# can move a status" giving the wrong answer.
 SCOPE_ROUTES: Final[dict[str, frozenset[tuple[str, str]]]] = {
     READ: _READ_ROUTES,
     PROPOSE: _READ_ROUTES | {("POST", "/api/deploy-changes")},
@@ -67,5 +79,24 @@ STATUS_MOVING_ROUTES: Final = frozenset(
         ("POST", "/api/items/{item_id}/outcome"),
         ("POST", "/api/items/{item_id}/handoff"),
         ("POST", "/api/sync"),
+        # ADR-0019 increment 5a. The proposal ingress MOVES A STATUS, and saying otherwise is
+        # what this entry exists to stop. `propose_deploy_change` runs the deploy policy on both
+        # a new record and an existing one, so it can write `approved` and it can revoke back to
+        # `pending`. Until increment 5a it genuinely could not touch a stored row; the module
+        # docstring above, and this set, both said so, and both would have gone on saying so.
+        ("POST", "/api/deploy-changes"),
     }
 )
+
+# The narrower property that is still TRUE of every narrow credential, and the one worth
+# guarding: none of them can CHOOSE a record's status.
+#
+# The distinction is the whole of ADR-0019 increment 5a. A `propose` credential can cause a
+# status to move, because proposing a record whose shape conforms to a pinned policy is what
+# approval IS -- but it cannot select the outcome, cannot approve a record it did not propose,
+# and cannot approve one whose shape a human has not ratified in advance. Every other
+# status-moving route takes the new status from the caller.
+#
+# Stated as a subtraction from the set above rather than as its own literal, so a route added to
+# one is added to both and the exception stays exactly one entry wide.
+CALLER_CHOSEN_STATUS_ROUTES: Final = STATUS_MOVING_ROUTES - {("POST", "/api/deploy-changes")}

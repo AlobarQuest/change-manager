@@ -35,24 +35,40 @@ def test_the_detail_page_shows_the_criteria_and_the_rollback_plan(db, client, de
     assert "Root cause" not in html
 
 
-def test_approving_a_deploy_change_is_not_a_dead_end(db, client, deploy_payload):
-    """Approve is the human's most natural click and nothing will ever claim the
-    result, so without terminal actions the record parks where no control reaches it
-    — and the default dashboard view (status=pending) no longer shows it."""
+def test_a_human_cannot_approve_a_deploy_change_from_the_gui(db, client, deploy_payload):
+    """ADR-0019 increment 5: approval is conformance to a pinned policy, not a click.
+
+    This replaces a test that asserted the opposite, and the swap is deliberate rather than
+    a green-making edit. Devon's ruling is that the human act is setting the policy, not
+    deciding a change one at a time, so the most natural click is exactly the one that has
+    to stop working — and it must fail with a reason on screen, not silently.
+    """
     _dev_login()
     item, _ = propose_deploy_change(db, DeployChangeIn(**deploy_payload()))
-    assert client.post(f"/items/{item.id}/approve").status_code in (200, 303)
+    refusal = client.post(f"/items/{item.id}/approve")
+    assert refusal.status_code == 409
+    assert "approved by policy conformance" in refusal.text
     db.refresh(item)
-    assert item.status == "approved"
+    assert item.status == "pending"
+
+
+def test_a_deploy_change_is_still_not_a_dead_end(db, client, deploy_payload):
+    """The concern the old approve test was really protecting, kept.
+
+    Nothing will ever claim a deploy record, so without terminal actions it parks where no
+    control reaches it. Closing the approve door must not close those too — the vetoes are
+    the whole of a human's remaining power over such a record.
+    """
+    _dev_login()
+    item, _ = propose_deploy_change(db, DeployChangeIn(**deploy_payload()))
 
     detail = client.get(f"/items/{item.id}").text
     assert f"/items/{item.id}/resolve" in detail
     assert f"/items/{item.id}/wontfix" in detail
 
-    row = client.get("/?status=approved&source=deploy").text
+    row = client.get("/?status=pending&source=deploy").text
     assert f"/items/{item.id}/resolve" in row
 
-    # And the action a human reaches for actually works from `approved`.
     assert client.post(f"/items/{item.id}/wontfix").status_code in (200, 303)
     db.refresh(item)
     assert item.status == "wontfix"
@@ -124,3 +140,21 @@ def test_a_drift_item_still_renders_its_plan(db, client):
     html = client.get(f"/items/{it.id}").text
     assert "Root cause" in html and "no TLS" in html
     assert "Acceptance criteria" not in html
+
+
+def test_a_human_cannot_hand_off_a_deploy_change_from_the_gui(db, client, deploy_payload):
+    """The API twin has refused this since increment 1; this door did not.
+
+    Live in production until ADR-0019 increment 5's review found it. The button is merely
+    hidden — `_row.html` renders it only when a handoff brief exists — and a proposed change
+    has none, so nothing rendered it and nothing refused it either. A hidden button is not a
+    closed door.
+    """
+    _dev_login()
+    item, _ = propose_deploy_change(db, DeployChangeIn(**deploy_payload()))
+    refused = client.post(f"/items/{item.id}/handoff")
+    assert refused.status_code == 409
+    assert "no authorized executor" in refused.text
+    db.refresh(item)
+    assert item.status == "pending"
+    assert item.handed_off_at is None

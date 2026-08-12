@@ -11,7 +11,15 @@
   <td><span class="badge">{{ it.risk }}</span></td>
   <td><span class="badge">{{ it.status }}</span></td>
   <td>
-    {% if it.status in ["pending", "deferred"] %}
+    {% if it.status in ["pending", "deferred"] and not it.has_authorized_executor %}
+      {# A proposed change is approved by conformance to a pinned policy and by nobody's
+         click (ADR-0019 increment 5), so Approve is not offered — the server refuses it,
+         and an affordance that always 409s is worse than none. The vetoes stay: without
+         a terminal action a record nothing will ever claim parks where no control reaches
+         it, which is the concern this template already carried one status further down. #}
+      <button hx-post="/items/{{ it.id }}/resolve" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Resolve</button>
+      <button hx-post="/items/{{ it.id }}/wontfix" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Won't-fix</button>
+    {% elif it.status in ["pending", "deferred"] %}
       <button hx-post="/items/{{ it.id }}/approve" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Approve</button>
       <button hx-post="/items/{{ it.id }}/defer"   hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Defer</button>
       <button hx-post="/items/{{ it.id }}/wontfix" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Won't-fix</button>

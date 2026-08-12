@@ -7,7 +7,7 @@ an empty string is a field that will be.
 
 import pytest
 
-from app.models import ChangeItem
+from app.models import ChangeEvent, ChangeItem
 
 
 def test_a_well_formed_proposal_is_created(client, m2m, deploy_payload, db):
@@ -233,8 +233,6 @@ def test_a_different_actor_replaying_the_same_facts_is_not_a_conflict(
 @pytest.mark.parametrize(
     "override",
     [
-        pytest.param({"acceptance_criteria": ["something else entirely"]}, id="criteria"),
-        pytest.param({"rollback_plan": {"steps": ["something else"]}}, id="rollback"),
         pytest.param({"change_class": "software-delivery"}, id="change-class"),
         pytest.param({"risk": "safe"}, id="risk"),
         pytest.param({"reasoning": "a different reason"}, id="reasoning"),
@@ -244,13 +242,50 @@ def test_a_different_actor_replaying_the_same_facts_is_not_a_conflict(
 def test_a_divergent_proposal_for_the_same_pull_request_is_refused(
     client, m2m, deploy_payload, db, override
 ):
-    """Silently returning the stored record would hide the divergence; overwriting it
-    would let a second caller rewrite criteria a human may already have approved."""
+    """Silently returning the stored record would hide the divergence.
+
+    ADR-0019 increment 5 narrowed this to the facts the caller ASSERTS. The two DERIVED
+    facts moved to the refresh tests below, and the concern this test's original docstring
+    raised about them — "overwriting would let a second caller rewrite criteria a human may
+    already have approved" — is now answered by revocation rather than by refusal, which
+    `test_refreshed_criteria_revoke_an_approval` pins.
+    """
     client.post("/api/deploy-changes", json=deploy_payload(), headers=m2m)
     r = client.post("/api/deploy-changes", json=deploy_payload(**override), headers=m2m)
     assert r.status_code == 409
     assert next(iter(override)) in r.json()["detail"]
     assert db.query(ChangeItem).count() == 1
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        pytest.param({"acceptance_criteria": ["something else entirely"]}, id="criteria"),
+        pytest.param({"rollback_plan": {"steps": ["something else"]}}, id="rollback"),
+    ],
+)
+def test_a_derived_fact_is_refreshed_rather_than_refused(client, m2m, deploy_payload, db, override):
+    """These two describe the WORLD, not the caller's claim, so a repeat proposal updates them.
+
+    Refusing them was a permanent brick: the record kept the old value forever, and once the
+    policy was bumped to the new one it could never conform again — write-once row, `PATCH`
+    limited to `pr_url`, no supersede route, and the identity held so no fresh record could
+    be made either. One rollout-workflow merge would have silently revoked every waiting
+    record with no route back.
+    """
+    first = client.post("/api/deploy-changes", json=deploy_payload(), headers=m2m)
+    field, value = next(iter(override.items()))
+    r = client.post("/api/deploy-changes", json=deploy_payload(**override), headers=m2m)
+    assert r.status_code == 200
+    assert r.json()["id"] == first.json()["id"]
+    assert db.query(ChangeItem).count() == 1
+    stored = db.get(ChangeItem, first.json()["id"])
+    db.refresh(stored)
+    assert getattr(stored, field) == value
+    refreshed = db.query(ChangeEvent).filter_by(item_id=stored.id, event_type="criteria_refreshed")
+    assert refreshed.count() == 1, (
+        "a refresh that leaves no event is a silent rewrite of what the deploy is held to"
+    )
 
 
 def test_a_different_pull_request_gets_its_own_record(client, m2m, deploy_payload, db):
