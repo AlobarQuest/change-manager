@@ -15,6 +15,7 @@ moment the policy moves.
 """
 
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -363,3 +364,228 @@ def test_the_policy_route_serves_the_conditions_a_landing_needs(client, m2m):
 
 def test_the_policy_route_requires_a_credential(client):
     assert client.get("/api/deploy-policy").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Version 2 -- the rollout-workflow pin (ADR-0019 increment 5b).
+# ---------------------------------------------------------------------------
+
+
+def test_version_one_is_retained_verbatim_and_declares_no_pin():
+    """The editing contract, stated as a test rather than only as prose.
+
+    Version 1 predates `rollout_workflows`, so it must still be readable exactly as it was
+    decided. The default is empty rather than absent so the dataclass can gain the field, and
+    an empty pin is NOT a waived condition -- the landing party fails closed on a repository it
+    has no pin for. Asserting emptiness here is what makes that reading load-bearing: if some
+    later edit quietly gave version 1 a pin, a record approved under it would start meaning
+    something nobody decided in 2026-08-11.
+    """
+    v1 = policy_for(1)
+    assert v1 is not None
+    assert v1.landing.rollout_workflows == {}
+    assert v1.decided == "2026-08-11"
+
+
+def test_the_current_version_pins_the_rollout_workflow_of_every_repository_it_names():
+    """A repository the policy admits with no pinned workflow is a repository whose criteria
+    describe bytes nobody named, which is the hole this version exists to close."""
+    policy = current()
+    assert CURRENT_VERSION == 2
+    for repository in policy.repositories:
+        pin = policy.landing.rollout_workflows.get(repository)
+        assert pin is not None, f"{repository} is admitted with no rollout-workflow pin"
+        assert pin.path and pin.blob_sha
+        assert len(pin.blob_sha) == 40 and pin.blob_sha == pin.blob_sha.lower()
+
+
+def test_the_pin_names_the_revision_the_criteria_were_written_about():
+    """The pin and the criteria are two halves of one judgment, and nothing else joins them.
+
+    `a47d4b18…` is the `191ec5a` revision of change-manager's rollout, the one that polls
+    /api/health until it reports the merged commit. The acceptance criteria say exactly that. A
+    pin naming some other blob would leave the policy asserting a guarantee about bytes that do
+    not make it.
+    """
+    policy = current()
+    repository = "alobarquest/change-manager"
+    pin = policy.landing.rollout_workflows[repository]
+    assert pin.path == ".github/workflows/deploy.yml"
+    assert pin.blob_sha == "a47d4b187c93971a5b5915ce87a963bd4ef35e30"
+    assert any("api/health" in c for c in policy.acceptance_criteria[repository])
+
+
+def test_the_route_serves_the_pin_so_the_landing_party_holds_no_copy(client, m2m):
+    """The whole reason the condition is declared here and evaluated there."""
+    landing = client.get("/api/deploy-policy", headers=m2m).json()["landing"]
+    assert landing["rollout_workflows"] == {
+        "alobarquest/change-manager": {
+            "path": ".github/workflows/deploy.yml",
+            "blob_sha": "a47d4b187c93971a5b5915ce87a963bd4ef35e30",
+        }
+    }
+
+
+def test_version_two_narrows_and_does_not_widen():
+    """Every shape version 1 admitted, version 2 admits; the only change is a new condition
+    on the act. Stated as a test because "additive" is the claim that makes it safe to bump
+    while records approved under version 1 are still waiting."""
+    v1, v2 = policy_for(1), policy_for(2)
+    assert v1 is not None and v2 is not None
+    assert v2.repositories == v1.repositories
+    assert v2.change_classes == v1.change_classes
+    assert v2.risks == v1.risks
+    assert v2.acceptance_criteria == v1.acceptance_criteria
+    assert v2.rollback_plans == v1.rollback_plans
+    assert v2.landing.update_types == v1.landing.update_types
+    assert v2.landing.require_head_current_with_base is True
+
+
+def test_the_record_row_carries_the_conditions_the_landing_party_must_evaluate(client, m2m, db):
+    """ADR-0019 increment 5b. The landing party reads the conditions where it reads the record.
+
+    `GET /api/deploy-policy` still serves them standing alone. This projection exists because the
+    orchestrator's architecture guards forbid the bare token that route's path is spelled with --
+    measured, not predicted -- and because reading both from one response means the version a
+    record was approved under and the version now in force cannot disagree across two calls.
+    """
+    item = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()
+    assert item["policy_version"] == CURRENT_VERSION
+    assert item["landing_policy_version"] == CURRENT_VERSION
+    assert (
+        item["landing_conditions"]
+        == client.get("/api/deploy-policy", headers=m2m).json()["landing"]
+    )
+
+
+def test_the_two_version_fields_are_not_the_same_question(client, m2m, db):
+    """`policy_version` is what approved THIS record; `landing_policy_version` is what is in
+    force now. They are equal today and the landing refuses when they are not, which is the only
+    mechanism by which moving the policy binds an approval that already exists."""
+    item = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()
+    row = db.get(ChangeItem, item["id"])
+    assert row is not None
+    row.policy_version = 1
+    db.commit()
+
+    served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
+    assert served["policy_version"] == 1
+    assert served["landing_policy_version"] == CURRENT_VERSION == 2
+
+
+def test_a_drift_record_carries_no_landing_conditions(client, m2m, db):
+    """They are conditions on a deploying merge. A drift item is not one, and serving them
+    against it would invite a consumer to read policy that says nothing about it."""
+    item = ChangeItem(
+        identity="prod::some-rule::abc",
+        instance="prod",
+        rule_key="some-rule",
+        kind="drift",
+        reasoning="something drifted",
+        risk="caution",
+        source="security",
+        status="pending",
+        plan={},
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
+    )
+    db.add(item)
+    db.commit()
+    served = client.get("/api/items?source=security", headers=m2m).json()
+    assert served and served[0]["landing_conditions"] is None
+
+
+def test_a_record_that_still_conforms_is_re_approved_under_the_NEWER_version(client, m2m, db):
+    """THE branch without which a version bump is permanent brickage.
+
+    A record approved under version 1 that still conforms under version 2 matches neither the
+    approve branch (which needs a status that is not already approved) nor the revoke branch
+    (which needs an objection). There is no other route: `approve` is refused to every caller
+    including the full bearer, and the identity is held so no fresh record can be proposed. The
+    landing binds an approval to the version IN FORCE, so a stranded record is unlandable forever.
+    """
+    item_id = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()["id"]
+    row = db.get(ChangeItem, item_id)
+    assert row is not None
+    row.policy_version = 1
+    db.commit()
+
+    replay = client.post("/api/deploy-changes", json=conformant(), headers=m2m)
+
+    assert replay.status_code == 200
+    assert replay.json()["policy_version"] == CURRENT_VERSION
+    db.refresh(row)
+    assert row.status == "approved" and row.decided_by == POLICY_ACTOR
+
+
+def test_the_re_approval_enters_the_chain_as_a_grant_of_its_own(client, m2m, db):
+    """A version bump is a fresh human decision about what may land unattended, and `approved` is
+    the only thing this service emits that becomes an authority grant. Re-stamping the column
+    silently would leave the grant under the newer version absent from the chain while the one it
+    replaced is in it."""
+    item_id = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()["id"]
+    row = db.get(ChangeItem, item_id)
+    assert row is not None
+    row.policy_version = 1
+    db.commit()
+    before = len(_events(db, item_id, "approved"))
+
+    client.post("/api/deploy-changes", json=conformant(), headers=m2m)
+
+    approvals = _events(db, item_id, "approved")
+    assert len(approvals) == before + 1
+    assert f"v{CURRENT_VERSION}" in (approvals[-1].detail or "")
+
+
+def test_a_record_already_on_the_current_version_is_not_re_stamped(client, m2m, db):
+    """The control. Without it the branch above would pass for one that emits a grant on every
+    pass -- an authority-grant row per hour, for a decision nobody made."""
+    item_id = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()["id"]
+    before = len(_events(db, item_id, "approved"))
+
+    client.post("/api/deploy-changes", json=conformant(), headers=m2m)
+
+    assert len(_events(db, item_id, "approved")) == before
+
+
+def test_a_record_that_stops_conforming_is_still_revoked_rather_than_re_stamped(
+    client, m2m, db, deploy_payload
+):
+    """The other control: the new branch must not swallow the revocation. An approved record on an
+    old version whose shape no longer conforms goes back to pending, not forward to the new
+    version."""
+    item_id = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()["id"]
+    row = db.get(ChangeItem, item_id)
+    assert row is not None
+    row.policy_version = 1
+    row.risk = "reckless"
+    db.commit()
+
+    client.post("/api/deploy-changes", json=conformant(risk="reckless"), headers=m2m)
+
+    db.refresh(row)
+    assert row.status == "pending" and row.policy_version is None
+
+
+def test_a_record_a_HUMAN_approved_is_never_restamped_as_policy_approved(client, m2m, db):
+    """`None != 2` is true, so the re-approval branch needs an explicit not-None clause.
+
+    Without it, the one record shape the landing party refuses -- approved by a person before any
+    policy existed, which is production item 44 -- would be converted into a policy approval here,
+    its approver overwritten, and an `approved` event claiming conformance would enter the
+    tamper-evident chain. The landing party cannot see the difference; this is where it is kept.
+    """
+    item_id = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()["id"]
+    row = db.get(ChangeItem, item_id)
+    assert row is not None
+    row.policy_version = None
+    row.decided_by = "hq-correction"
+    db.commit()
+    before = len(_events(db, item_id, "approved"))
+
+    client.post("/api/deploy-changes", json=conformant(), headers=m2m)
+
+    db.refresh(row)
+    assert row.policy_version is None, "a human's approval was restamped as a policy approval"
+    assert row.decided_by == "hq-correction", "a human's name was overwritten"
+    assert len(_events(db, item_id, "approved")) == before

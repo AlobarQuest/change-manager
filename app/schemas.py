@@ -155,6 +155,31 @@ class DeployChangeIn(BaseModel):
         return [_required_text(c, "acceptance_criteria[]") for c in v]
 
 
+class DeployRetirementIn(BaseModel):
+    """An observed fact about a deploying-merge record's subject (ADR-0019 increment 5b).
+
+    There is NO status field, and that absence is the route's whole justification: the caller
+    reports what it saw and the server decides what follows. Every other status-moving route in
+    this service takes the new status from the caller, which is why they are the full
+    credential's alone.
+
+    The pull request number is repeated from the record rather than taken on trust from the path,
+    for increment 1's reason: naming the subject twice is what lets the server refuse a mismatch
+    instead of retiring whichever record the id happened to select.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    observation: str
+    pull_request_number: int = Field(gt=0, le=2_147_483_647, strict=True)
+    actor: str
+
+    @field_validator("observation", "actor")
+    @classmethod
+    def _not_blank(cls, v: str, info) -> str:
+        return _required_text(v, info.field_name)
+
+
 # A git object name as GitHub serves it. Anchored and lower-case: `fullmatch` on a case-folded
 # value, so `ABC…`/`abc…` cannot become two spellings of one commit in the frozen-merge guard.
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}")
