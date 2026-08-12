@@ -83,6 +83,27 @@ def _item_dict(it: ChangeItem) -> dict:
         "policy_objections": list(objections(current_policy(), it))
         if it.source in PROPOSED_SOURCES
         else [],
+        # ADR-0019 increment 5b. What the CURRENT policy requires of the act, carried beside the
+        # record the act would be about. `GET /api/deploy-policy` serves the same thing standing
+        # alone and is the surface a person reads; this is the surface the landing party reads,
+        # and it is here rather than there for two reasons.
+        #
+        # The first is decisive and was measured rather than predicted: the orchestrator's
+        # architecture guards forbid the bare token this service's policy route is spelled with,
+        # anywhere under its source tree, and its own rule is to reword rather than to widen a
+        # guard. It cannot name that path. It already reads this listing.
+        #
+        # The second is that the record and the conditions then arrive in ONE response, so they
+        # cannot disagree across two calls -- the version a record was approved under and the
+        # version now in force are compared from a single read of a single service.
+        #
+        # It is still one holder and one reader: this is a projection of the same artifact, not a
+        # copy of it. `landing_policy_version` is the CURRENT version and is deliberately not the
+        # same field as `policy_version` above, which is the version that approved this record.
+        "landing_policy_version": current_policy().version,
+        "landing_conditions": landing_conditions_dict(current_policy())
+        if it.source in PROPOSED_SOURCES
+        else None,
     }
 
 

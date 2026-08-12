@@ -15,6 +15,7 @@ moment the policy moves.
 """
 
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -438,3 +439,57 @@ def test_version_two_narrows_and_does_not_widen():
     assert v2.rollback_plans == v1.rollback_plans
     assert v2.landing.update_types == v1.landing.update_types
     assert v2.landing.require_head_current_with_base is True
+
+
+def test_the_record_row_carries_the_conditions_the_landing_party_must_evaluate(client, m2m, db):
+    """ADR-0019 increment 5b. The landing party reads the conditions where it reads the record.
+
+    `GET /api/deploy-policy` still serves them standing alone. This projection exists because the
+    orchestrator's architecture guards forbid the bare token that route's path is spelled with --
+    measured, not predicted -- and because reading both from one response means the version a
+    record was approved under and the version now in force cannot disagree across two calls.
+    """
+    item = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()
+    assert item["policy_version"] == CURRENT_VERSION
+    assert item["landing_policy_version"] == CURRENT_VERSION
+    assert (
+        item["landing_conditions"]
+        == client.get("/api/deploy-policy", headers=m2m).json()["landing"]
+    )
+
+
+def test_the_two_version_fields_are_not_the_same_question(client, m2m, db):
+    """`policy_version` is what approved THIS record; `landing_policy_version` is what is in
+    force now. They are equal today and the landing refuses when they are not, which is the only
+    mechanism by which moving the policy binds an approval that already exists."""
+    item = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()
+    row = db.get(ChangeItem, item["id"])
+    assert row is not None
+    row.policy_version = 1
+    db.commit()
+
+    served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
+    assert served["policy_version"] == 1
+    assert served["landing_policy_version"] == CURRENT_VERSION == 2
+
+
+def test_a_drift_record_carries_no_landing_conditions(client, m2m, db):
+    """They are conditions on a deploying merge. A drift item is not one, and serving them
+    against it would invite a consumer to read policy that says nothing about it."""
+    item = ChangeItem(
+        identity="prod::some-rule::abc",
+        instance="prod",
+        rule_key="some-rule",
+        kind="drift",
+        reasoning="something drifted",
+        risk="caution",
+        source="security",
+        status="pending",
+        plan={},
+        first_seen_at=datetime.now(UTC),
+        last_seen_at=datetime.now(UTC),
+    )
+    db.add(item)
+    db.commit()
+    served = client.get("/api/items?source=security", headers=m2m).json()
+    assert served and served[0]["landing_conditions"] is None
