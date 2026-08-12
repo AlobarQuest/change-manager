@@ -43,7 +43,7 @@ so a change on one side must be ratified against the other.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Final
 
 # Update types a landing may carry, in Dependabot's own vocabulary. DECLARED HERE, ENFORCED AT THE
@@ -55,6 +55,29 @@ SEMVER_MAJOR: Final = "semver-major"
 
 
 @dataclass(frozen=True)
+class WorkflowPin:
+    """WHICH BYTES a repository's rollout workflow must still be, for a landing to proceed.
+
+    A POINTER, never a transcription. `acceptance_criteria` above says what a green rollout
+    attests; this says which file, at which blob, that statement was made about. The landing party
+    reads the blob at the trigger branch's head and refuses when it differs -- so a rollout
+    workflow that changes stops every unattended landing until a human reads what changed and
+    ratifies it by bumping this policy.
+
+    A pin rather than a copy for the reason the estate's landing ledger pins its own gate: the
+    only thing that can classify a workflow's bytes is a human, that classification lives in one
+    place, and a second reader would need a second copy of it. A blob sha needs neither.
+
+    Named as the FILE PATH and the BLOB, because the two answer different failures: a renamed path
+    reads as an absent file, which must refuse rather than pass, and an edited file at the same
+    path reads as a different blob.
+    """
+
+    path: str
+    blob_sha: str
+
+
+@dataclass(frozen=True)
 class LandingConditions:
     """Conditions on the ACT, which this service declares and does not evaluate.
 
@@ -62,11 +85,18 @@ class LandingConditions:
     copy -- one holder, one reader. Increment 3 established that a policy value copied into a second
     service is a fail-open, and the shape here is the same one `GET /api/v1/factory-policy` already
     uses in the other direction.
+
+    `rollout_workflows` DEFAULTS TO EMPTY so that version 1, which predates it, is retained
+    verbatim rather than edited -- the editing contract in this module's header. A version that
+    declares no pin for a repository is not a version that waives the condition: the landing party
+    fails closed on a repository it has no pin for, because "nobody said which bytes" and "these
+    bytes are fine" are not the same statement.
     """
 
     update_types: frozenset[str]
     require_head_current_with_base: bool
     rationale: str
+    rollout_workflows: Mapping[str, WorkflowPin] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -157,11 +187,79 @@ V1: Final = DeployPolicy(
     landing=_V1_LANDING,
 )
 
+# ---------------------------------------------------------------------------
+# Version 2 -- Devon, 2026-08-12. Version 1 above is retained verbatim.
+# ---------------------------------------------------------------------------
+#
+# ADDS ONE CONDITION AND CHANGES NOTHING ELSE: the rollout workflow a landing rests on must still
+# be the bytes this version was written about. Everything a version-1 record satisfied it still
+# satisfies, so a record approved under version 1 conforms to version 2 on shape -- and is
+# nevertheless refused at the landing until it is re-approved, because the landing binds an
+# approval to the CURRENT version. That is the narrowing taking effect at the act, which is the
+# only mechanism by which moving this file binds an approval that already exists.
+
+_V2_LANDING: Final = LandingConditions(
+    update_types=frozenset({SEMVER_PATCH, SEMVER_MINOR}),
+    require_head_current_with_base=True,
+    rationale=(
+        "Patch and minor only, which is STRICTER than the cascade governing the repositories "
+        "where landing changes nothing already serving, for the reason version 1 gives: the "
+        "rollout job does not run on a pull request, only on a landing, so a major bump to the "
+        "workflow-automation ecosystem would be exercised for the first time during the very "
+        "rollout it is supposed to gate. A requirement-RANGE bump carries no update type at all "
+        "and is refused for want of a parseable delta. THAT IS THE INTENDED BEHAVIOUR AND NOT A "
+        "PARSER DEFECT; do not 'fix' it. Freshness is a policy condition rather than a strict "
+        "branch, because a strict branch serialises human merges too and applies estate-wide "
+        "behaviour nobody versions. "
+        "WHAT VERSION 2 ADDS IS THE ROLLOUT-WORKFLOW PIN. The acceptance criteria say what a "
+        "green rollout attests, and until now nothing checked that the workflow producing it was "
+        "still the bytes that statement was made about. The producer notices a moved workflow on "
+        "its next pass and revokes the approval -- but that is a scheduled job rather than a "
+        "condition on the act, so between a workflow landing and the next pass a change could be "
+        "landed under criteria describing bytes that no longer exist. The pin closes it at the "
+        "act: the landing party reads the blob at the trigger branch's head and refuses on any "
+        "difference, so a rollout workflow that changes stops unattended landing until a human "
+        "reads the change and bumps this policy. It is the discipline the estate's landing ledger "
+        "already applies to the gate workflow it re-evaluates rule landings against."
+    ),
+    rollout_workflows={
+        "alobarquest/change-manager": WorkflowPin(
+            path=".github/workflows/deploy.yml",
+            # `191ec5a`, 2026-08-07 -- the revision that polls /api/health until it reports the
+            # merged commit. It is what the acceptance criteria describe, and the only revision of
+            # this workflow under which a green rollout means what they say.
+            blob_sha="a47d4b187c93971a5b5915ce87a963bd4ef35e30",
+        )
+    },
+)
+
+# The criteria and the remedy are UNCHANGED between the two versions, so they are the same
+# constants rather than a second transcription of one judgment. The `_V1_` names record where each
+# was introduced; a version that changes one declares its own.
+V2: Final = DeployPolicy(
+    version=2,
+    decided="2026-08-12",
+    rationale=(
+        "One repository, unchanged from version 1 and for its reasons: landing on "
+        "alobarquest/change-manager is followed by a poll of /api/health until it reports the "
+        "merged commit, so a green rollout genuinely establishes that production is serving the "
+        "change, where the other repository where landing redeploys attests only that a domain "
+        "answered. What this version changes is that the workflow making that attestation is now "
+        "pinned by its bytes, so the claim cannot quietly stop being true of the thing that runs."
+    ),
+    repositories=frozenset({"alobarquest/change-manager"}),
+    change_classes=frozenset({"dependency-update"}),
+    risks=frozenset({"caution"}),
+    acceptance_criteria={"alobarquest/change-manager": _V1_CHANGE_MANAGER_CRITERIA},
+    rollback_plans={"alobarquest/change-manager": _V1_CHANGE_MANAGER_ROLLBACK},
+    landing=_V2_LANDING,
+)
+
 # Every version ever, retained. A record stores the number that approved it, so an approval stays
 # re-evaluable after the policy has moved on.
-REGISTRY: Final[dict[int, DeployPolicy]] = {policy.version: policy for policy in (V1,)}
+REGISTRY: Final[dict[int, DeployPolicy]] = {policy.version: policy for policy in (V1, V2)}
 
-CURRENT_VERSION: Final = 1
+CURRENT_VERSION: Final = 2
 
 
 def policy_for(version: int) -> DeployPolicy | None:
@@ -213,9 +311,19 @@ def objections(policy: DeployPolicy, item: object) -> tuple[str, ...]:
 
 
 def landing_conditions_dict(policy: DeployPolicy) -> dict:
-    """The conditions on the act, in the shape the landing party reads them."""
+    """The conditions on the act, in the shape the landing party reads them.
+
+    `rollout_workflows` is served keyed by repository. A repository absent from it has no pin
+    under this version, and the landing party must read that as a refusal rather than as a waiver
+    -- the reason is on `LandingConditions`, and the two readings differ for exactly the version
+    that predates the field.
+    """
     return {
         "update_types": sorted(policy.landing.update_types),
         "require_head_current_with_base": policy.landing.require_head_current_with_base,
         "rationale": policy.landing.rationale,
+        "rollout_workflows": {
+            repository: {"path": pin.path, "blob_sha": pin.blob_sha}
+            for repository, pin in sorted(policy.landing.rollout_workflows.items())
+        },
     }

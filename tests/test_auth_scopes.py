@@ -104,16 +104,27 @@ def test_no_narrow_scope_can_choose_a_change_records_status(scope: str) -> None:
 
 @pytest.mark.parametrize("scope", NARROW_SCOPES)
 def test_the_only_status_a_narrow_scope_can_move_is_the_one_policy_decides(scope: str) -> None:
-    """The exception is NAMED and exactly one entry wide, so it cannot silently grow.
+    """The exception is NAMED and exactly two entries wide, so it cannot silently grow.
 
     ADR-0019 increment 5a: `propose` reaches the proposal ingress, and that ingress runs the
     deploy policy — so it CAN cause an approval. The guard above is keyed on the narrower
     property that survives (no narrow credential picks a status). This one bounds the gap, so
-    that a second status-moving route landing in a narrow scope is a failure rather than a
+    that a third status-moving route landing in a narrow scope is a failure rather than a
     quietly widened exception.
+
+    Increment 5b adds the retirement ingress to the same scope. It is the same shape — a fact in,
+    a server decision out — with one property proposal does not have: its only outcome REMOVES
+    permission, which is what makes it acceptable on an observation this service cannot check.
     """
     reached = SCOPE_ROUTES[scope] & STATUS_MOVING_ROUTES
-    expected = {("POST", "/api/deploy-changes")} if scope == PROPOSE else set()
+    expected = (
+        {
+            ("POST", "/api/deploy-changes"),
+            ("POST", "/api/items/{item_id}/deploy-retirement"),
+        }
+        if scope == PROPOSE
+        else set()
+    )
     assert reached == expected, f"the '{scope}' scope reaches {sorted(reached)}"
 
 
@@ -174,7 +185,7 @@ def test_a_route_no_scope_lists_is_reachable_only_by_the_full_credential() -> No
 
     The scopes themselves are protected by `test_no_narrow_scope_can_move_a_change_records_status`
     and, derived from the live table so it cannot pass vacuously,
-    `test_no_narrow_scope_reaches_any_write_except_the_two_it_exists_for`.
+    `test_no_narrow_scope_reaches_any_write_except_the_three_they_exist_for`.
     """
     listed: set[tuple[str, str]] = set()
     for routes in SCOPE_ROUTES.values():
@@ -187,7 +198,7 @@ def test_a_route_no_scope_lists_is_reachable_only_by_the_full_credential() -> No
             assert (method, template) not in SCOPE_ROUTES[scope]
 
 
-def test_no_narrow_scope_reaches_any_write_except_the_two_it_exists_for() -> None:
+def test_no_narrow_scope_reaches_any_write_except_the_three_they_exist_for() -> None:
     """Derived from the live table, so it cannot pass vacuously and cannot go stale.
 
     `test_no_narrow_scope_can_move_a_change_records_status` above is keyed on a LITERAL set, which
@@ -205,6 +216,7 @@ def test_no_narrow_scope_reaches_any_write_except_the_two_it_exists_for() -> Non
     assert reachable & writes == {
         ("POST", "/api/deploy-changes"),
         ("POST", "/api/items/{item_id}/deploy-observation"),
+        ("POST", "/api/items/{item_id}/deploy-retirement"),
     }
 
 
@@ -390,7 +402,7 @@ def test_no_narrow_scope_can_reach_the_deploy_policy_with_a_write(client, scoped
         assert client.post("/api/deploy-policy", headers=_bearer(token)).status_code in (403, 405)
 
 
-def test_the_policy_exception_is_exactly_one_route_wide() -> None:
+def test_the_caller_chosen_exception_is_exactly_the_two_fact_shaped_routes() -> None:
     """`CALLER_CHOSEN_STATUS_ROUTES` states a judgment, so it needs its own cross-check.
 
     A mutation caught this: emptying it left every scope test green, because an empty set
@@ -398,10 +410,69 @@ def test_the_policy_exception_is_exactly_one_route_wide() -> None:
     records for `STATUS_MOVING_ROUTES`, reproduced one constant later by the fix for it. A
     derived set is not self-guarding just because it is derived; what is derived is its
     CONTENT, and what needs pinning is the size and direction of the subtraction.
+
+    ADR-0019 increment 5b widened it from one route to two, and the test's NAME moved with it —
+    this module's own recorded lesson is that a name is a behavioural claim. Both members take a
+    FACT and let the server decide what follows; a third member that took a status would break
+    the property rather than extend the list.
     """
     exception = STATUS_MOVING_ROUTES - CALLER_CHOSEN_STATUS_ROUTES
-    assert exception == {("POST", "/api/deploy-changes")}, (
-        f"the policy exception is no longer exactly the proposal ingress: {sorted(exception)}"
-    )
+    assert exception == {
+        ("POST", "/api/deploy-changes"),
+        ("POST", "/api/items/{item_id}/deploy-retirement"),
+    }, f"the exception is no longer exactly the two fact-shaped routes: {sorted(exception)}"
     assert CALLER_CHOSEN_STATUS_ROUTES < STATUS_MOVING_ROUTES
-    assert len(CALLER_CHOSEN_STATUS_ROUTES) == len(STATUS_MOVING_ROUTES) - 1
+    assert len(CALLER_CHOSEN_STATUS_ROUTES) == len(STATUS_MOVING_ROUTES) - 2
+
+
+def test_the_propose_credential_reaches_the_retirement_it_exists_for(
+    client: TestClient, scoped: None, deploy_payload, db
+) -> None:
+    """ADR-0019 increment 5b. Not merely 'not 403' -- the record actually moves.
+
+    The producer that enumerates waiting pull requests is the only thing positioned to see one
+    closed unmerged, and until this it could do nothing about it: `resolve` is the full
+    credential's, and the full credential is what task zero exists to keep out of unattended jobs.
+    """
+    item = client.post(
+        "/api/deploy-changes", json=deploy_payload(), headers=_bearer(TOKENS["propose"])
+    ).json()
+    response = client.post(
+        f"/api/items/{item['id']}/deploy-retirement",
+        json={
+            "observation": "pull_request_closed_unmerged",
+            "pull_request_number": item["pull_request_number"],
+            "actor": "change-proposer",
+        },
+        headers=_bearer(TOKENS["propose"]),
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "resolved"
+
+
+@pytest.mark.parametrize("scope", ["read", "observe"])
+def test_the_other_narrow_credentials_cannot_retire(
+    client: TestClient, scoped: None, scope: str
+) -> None:
+    """The control. Without it the test above proves only that SOME credential works."""
+    response = client.post(
+        "/api/items/1/deploy-retirement",
+        json={
+            "observation": "pull_request_closed_unmerged",
+            "pull_request_number": 42,
+            "actor": "x",
+        },
+        headers=_bearer(TOKENS[scope]),
+    )
+    assert response.status_code == 403
+
+
+def test_the_propose_credential_still_cannot_resolve_anything_else(
+    client: TestClient, scoped: None
+) -> None:
+    """Retirement is narrower than `resolve` on purpose: deploy records only, one outcome, and
+    a fact rather than a status. The general verb stays where it was."""
+    response = client.post(
+        "/api/items/1/resolve", json={"actor": "producer"}, headers=_bearer(TOKENS["propose"])
+    )
+    assert response.status_code == 403

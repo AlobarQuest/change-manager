@@ -363,3 +363,78 @@ def test_the_policy_route_serves_the_conditions_a_landing_needs(client, m2m):
 
 def test_the_policy_route_requires_a_credential(client):
     assert client.get("/api/deploy-policy").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Version 2 -- the rollout-workflow pin (ADR-0019 increment 5b).
+# ---------------------------------------------------------------------------
+
+
+def test_version_one_is_retained_verbatim_and_declares_no_pin():
+    """The editing contract, stated as a test rather than only as prose.
+
+    Version 1 predates `rollout_workflows`, so it must still be readable exactly as it was
+    decided. The default is empty rather than absent so the dataclass can gain the field, and
+    an empty pin is NOT a waived condition -- the landing party fails closed on a repository it
+    has no pin for. Asserting emptiness here is what makes that reading load-bearing: if some
+    later edit quietly gave version 1 a pin, a record approved under it would start meaning
+    something nobody decided in 2026-08-11.
+    """
+    v1 = policy_for(1)
+    assert v1 is not None
+    assert v1.landing.rollout_workflows == {}
+    assert v1.decided == "2026-08-11"
+
+
+def test_the_current_version_pins_the_rollout_workflow_of_every_repository_it_names():
+    """A repository the policy admits with no pinned workflow is a repository whose criteria
+    describe bytes nobody named, which is the hole this version exists to close."""
+    policy = current()
+    assert CURRENT_VERSION == 2
+    for repository in policy.repositories:
+        pin = policy.landing.rollout_workflows.get(repository)
+        assert pin is not None, f"{repository} is admitted with no rollout-workflow pin"
+        assert pin.path and pin.blob_sha
+        assert len(pin.blob_sha) == 40 and pin.blob_sha == pin.blob_sha.lower()
+
+
+def test_the_pin_names_the_revision_the_criteria_were_written_about():
+    """The pin and the criteria are two halves of one judgment, and nothing else joins them.
+
+    `a47d4b18…` is the `191ec5a` revision of change-manager's rollout, the one that polls
+    /api/health until it reports the merged commit. The acceptance criteria say exactly that. A
+    pin naming some other blob would leave the policy asserting a guarantee about bytes that do
+    not make it.
+    """
+    policy = current()
+    repository = "alobarquest/change-manager"
+    pin = policy.landing.rollout_workflows[repository]
+    assert pin.path == ".github/workflows/deploy.yml"
+    assert pin.blob_sha == "a47d4b187c93971a5b5915ce87a963bd4ef35e30"
+    assert any("api/health" in c for c in policy.acceptance_criteria[repository])
+
+
+def test_the_route_serves_the_pin_so_the_landing_party_holds_no_copy(client, m2m):
+    """The whole reason the condition is declared here and evaluated there."""
+    landing = client.get("/api/deploy-policy", headers=m2m).json()["landing"]
+    assert landing["rollout_workflows"] == {
+        "alobarquest/change-manager": {
+            "path": ".github/workflows/deploy.yml",
+            "blob_sha": "a47d4b187c93971a5b5915ce87a963bd4ef35e30",
+        }
+    }
+
+
+def test_version_two_narrows_and_does_not_widen():
+    """Every shape version 1 admitted, version 2 admits; the only change is a new condition
+    on the act. Stated as a test because "additive" is the claim that makes it safe to bump
+    while records approved under version 1 are still waiting."""
+    v1, v2 = policy_for(1), policy_for(2)
+    assert v1 is not None and v2 is not None
+    assert v2.repositories == v1.repositories
+    assert v2.change_classes == v1.change_classes
+    assert v2.risks == v1.risks
+    assert v2.acceptance_criteria == v1.acceptance_criteria
+    assert v2.rollback_plans == v1.rollback_plans
+    assert v2.landing.update_types == v1.landing.update_types
+    assert v2.landing.require_head_current_with_base is True

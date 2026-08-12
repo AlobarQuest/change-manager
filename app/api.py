@@ -21,6 +21,7 @@ from app.deploy_observations import (
 )
 from app.deploy_policy import current as current_policy
 from app.deploy_policy import landing_conditions_dict, objections
+from app.deploy_retirement import RetirementRefused, retire_deploy_change
 from app.events import record_event
 from app.guards import require_executor, require_policy_approver
 from app.models import ChangeAttempt, ChangeEvent, ChangeItem, DeployObservation, WindowRun
@@ -30,6 +31,7 @@ from app.schemas import (
     DecisionIn,
     DeployChangeIn,
     DeployObservationIn,
+    DeployRetirementIn,
     OutcomeIn,
     SyncRequest,
     SyncSummary,
@@ -105,6 +107,34 @@ def propose_deploy(body: DeployChangeIn, response: Response, db: Session = Depen
     except (DeployChangeConflict, DeployChangeIdentityHeld) as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     response.status_code = 201 if created else 200
+    return _item_dict(item)
+
+
+@router.post("/items/{item_id}/deploy-retirement")
+def retire_deploy(item_id: int, body: DeployRetirementIn, db: Session = Depends(get_db)) -> dict:
+    """Retire a deploying-merge record whose pull request was closed without merging.
+
+    THE CALLER SUPPLIES A FACT, NOT A STATUS. That is what makes this reachable by the narrow
+    `propose` credential when every other status-moving verb is the full credential's alone --
+    and it is safe on a fact this service cannot check because the route can only ever REMOVE
+    permission, never grant it. `app/deploy_retirement.py` carries the argument.
+
+    Idempotent: a record already terminal answers 200 unchanged, because the producer sweeps on
+    every pass and a retirement it already made must not become a finding.
+    """
+    item = db.get(ChangeItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="item not found")
+    try:
+        retire_deploy_change(
+            db,
+            item,
+            observation=body.observation,
+            pull_request_number=body.pull_request_number,
+            actor=body.actor,
+        )
+    except RetirementRefused as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
     return _item_dict(item)
 
 

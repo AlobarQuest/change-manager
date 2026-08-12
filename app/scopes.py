@@ -45,8 +45,8 @@ _READ_ROUTES: Final = frozenset(
     }
 )
 
-# The scopes a narrow credential may hold. Each is READ plus at most one write, and no write here
-# lets the CALLER CHOOSE a record's status: the DECISION lifecycle
+# The scopes a narrow credential may hold. Each is READ plus the writes named below, and no write
+# here lets the CALLER CHOOSE a record's status: the DECISION lifecycle
 # (approve/defer/wontfix/resolve/reactivate) and the EXECUTION one (claim/outcome/handoff) are
 # both out of reach. That is the whole point of the file.
 #
@@ -58,7 +58,16 @@ _READ_ROUTES: Final = frozenset(
 # can move a status" giving the wrong answer.
 SCOPE_ROUTES: Final[dict[str, frozenset[tuple[str, str]]]] = {
     READ: _READ_ROUTES,
-    PROPOSE: _READ_ROUTES | {("POST", "/api/deploy-changes")},
+    PROPOSE: _READ_ROUTES
+    | {
+        ("POST", "/api/deploy-changes"),
+        # ADR-0019 increment 5b. The producer that enumerates pull requests waiting to happen is
+        # the only thing positioned to see one CLOSED without merging, and a record standing for a
+        # change that can never happen is the hole increment 5b closes. It is here rather than as
+        # a general `resolve` -- which stays the full credential's -- because this route takes a
+        # fact and not a status, works on deploy records only, and can reach exactly one outcome.
+        ("POST", "/api/items/{item_id}/deploy-retirement"),
+    },
     OBSERVE: _READ_ROUTES | {("POST", "/api/items/{item_id}/deploy-observation")},
 }
 
@@ -85,6 +94,10 @@ STATUS_MOVING_ROUTES: Final = frozenset(
         # `pending`. Until increment 5a it genuinely could not touch a stored row; the module
         # docstring above, and this set, both said so, and both would have gone on saying so.
         ("POST", "/api/deploy-changes"),
+        # ADR-0019 increment 5b. Retirement moves a status to `resolved`. It belongs here even
+        # though the caller never names that status -- this set is about what MOVES, and the set
+        # below is about what a caller may CHOOSE.
+        ("POST", "/api/items/{item_id}/deploy-retirement"),
     }
 )
 
@@ -97,6 +110,14 @@ STATUS_MOVING_ROUTES: Final = frozenset(
 # and cannot approve one whose shape a human has not ratified in advance. Every other
 # status-moving route takes the new status from the caller.
 #
+# Increment 5b adds the second, and the two are the same shape: retirement takes an OBSERVATION
+# and the server decides what follows, so the caller cannot pick `resolved` any more than it can
+# pick `approved`. It is additionally one-directional in a way proposal is not -- its only outcome
+# removes permission -- which is why it may act on a fact this service cannot check.
+#
 # Stated as a subtraction from the set above rather than as its own literal, so a route added to
-# one is added to both and the exception stays exactly one entry wide.
-CALLER_CHOSEN_STATUS_ROUTES: Final = STATUS_MOVING_ROUTES - {("POST", "/api/deploy-changes")}
+# one is added to both and the exceptions stay exactly the two entries named here.
+CALLER_CHOSEN_STATUS_ROUTES: Final = STATUS_MOVING_ROUTES - {
+    ("POST", "/api/deploy-changes"),
+    ("POST", "/api/items/{item_id}/deploy-retirement"),
+}
