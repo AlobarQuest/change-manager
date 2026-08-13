@@ -98,6 +98,12 @@ STATUS_MOVING_ROUTES: Final = frozenset(
         # though the caller never names that status -- this set is about what MOVES, and the set
         # below is about what a caller may CHOOSE.
         ("POST", "/api/items/{item_id}/deploy-retirement"),
+        # ADR-0022. Recording a rollout observation settles the record when the rollout confirmed
+        # the change landed, so this route moves a status too -- and until that ADR it did not,
+        # which is exactly why it has to be added here rather than left reading correctly by
+        # accident. `app/deploy_settlement.py` carries the argument for why an `observe`
+        # credential may cause it.
+        ("POST", "/api/items/{item_id}/deploy-observation"),
     }
 )
 
@@ -115,9 +121,16 @@ STATUS_MOVING_ROUTES: Final = frozenset(
 # pick `approved`. It is additionally one-directional in a way proposal is not -- its only outcome
 # removes permission -- which is why it may act on a fact this service cannot check.
 #
+# ADR-0022 adds the third, and it is the narrowest of them. Retirement acts on a fact only the
+# CALLER can see, so it has to be trusted with it; a settlement acts on a verdict THIS SERVER
+# DERIVED from coordinates, which `verdict_for` and `production_reached_for` compute and which the
+# schema refuses to accept as fields. Its outcome is one-directional in the same way retirement's
+# is: `resolved` is a status no landing term accepts.
+#
 # Stated as a subtraction from the set above rather than as its own literal, so a route added to
-# one is added to both and the exceptions stay exactly the two entries named here.
+# one is added to both and the exceptions stay exactly the three entries named here.
 CALLER_CHOSEN_STATUS_ROUTES: Final = STATUS_MOVING_ROUTES - {
     ("POST", "/api/deploy-changes"),
     ("POST", "/api/items/{item_id}/deploy-retirement"),
+    ("POST", "/api/items/{item_id}/deploy-observation"),
 }

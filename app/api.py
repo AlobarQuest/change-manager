@@ -17,11 +17,11 @@ from app.deploy_observations import (
     current_observation,
     merge_commits_observed,
     observations_for,
-    record_deploy_observation,
 )
 from app.deploy_policy import current as current_policy
 from app.deploy_policy import landing_conditions_dict, objections
 from app.deploy_retirement import RetirementRefused, retire_deploy_change
+from app.deploy_settlement import record_rollout_and_settle
 from app.events import record_event
 from app.guards import require_executor, require_policy_approver
 from app.models import ChangeAttempt, ChangeEvent, ChangeItem, DeployObservation, WindowRun
@@ -194,25 +194,38 @@ def observe_deploy(
     response: Response,
     db: Session = Depends(get_db),
 ) -> dict:
-    """Record what a watcher saw of the rollout this merge caused (ADR-0019 increment 2).
+    """Record what a watcher saw of the rollout this merge caused, and settle the record if that
+    rollout confirmed the change landed (ADR-0019 increment 2; ADR-0022).
 
-    NOT an outcome, and deliberately not on the execution lifecycle: it writes no
-    `ChangeAttempt` and moves the item's status by exactly nothing. Increment 1 closed
-    `claim`/`outcome`/`handoff` to proposed sources — the doors that let something assert it had
-    APPLIED a change — and this route does not reopen them, because observing is not applying.
-    Whether the change is finished remains a decision.
+    NOT an outcome, and still not on the execution lifecycle: it writes no `ChangeAttempt`.
+    Increment 1 closed `claim`/`outcome`/`handoff` to proposed sources — the doors that let
+    something assert it had APPLIED a change — and this route does not reopen them, because
+    observing is not applying.
 
-    201 when the observation is new, 200 when the same run attempt was already recorded.
+    **IT CAN NOW MOVE A STATUS, and the caller still cannot choose one.** ADR-0022 gives the
+    watcher the outcome: a record whose landing production confirmed is settled to `resolved`, by
+    the verdict THIS SERVER DERIVED from the coordinates supplied. `verdict` is not an accepted
+    field, the only reachable status is `resolved`, and no landing term accepts it — so this can
+    remove permission and can never grant it. `app/deploy_settlement.py` carries the argument.
+
+    201 when the observation is new, 200 when the same run attempt was already recorded. The
+    settlement runs either way, because it is a function of the whole observed history rather than
+    of this call — and the record that forced ADR-0022 already has its observation, so a REPLAY is
+    the only route by which it can ever settle.
     """
     it = db.get(ChangeItem, item_id)
     if it is None:
         raise HTTPException(status_code=404, detail="not found")
     try:
-        observation, created = record_deploy_observation(db, it, body)
+        observation, created, _settled = record_rollout_and_settle(db, it, body)
     except DeployObservationRefused as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     response.status_code = 201 if created else 200
-    return _observation_dict(observation)
+    # `item_status` is the caller's only way to learn that its observation settled the record, and
+    # it is on this route alone: the listing serves observations, which are facts about a rollout
+    # and say nothing about the record's lifecycle. The watcher reports it, and it is what makes a
+    # record that is terminal while its current observation is not a success visible to anybody.
+    return _observation_dict(observation) | {"item_status": it.status}
 
 
 @router.get("/items/{item_id}/deploy-observations")

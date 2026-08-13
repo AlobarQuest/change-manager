@@ -16,9 +16,18 @@ it into `unknown` is right there. A watcher looks at a merge minutes-to-hours ol
 observation means the rollout NEVER RAN -- a finding, not the absence of one. `pending` is never
 persisted: a verdict is a settled answer, and a row meaning "ask again" is not one.
 
-NOTHING HERE ACTS, and nothing here transitions. An observation appends a row and a history
-event. Whether the change is finished stays a decision -- a human's today, policy's in
-increment 4.
+NOTHING HERE ACTS. No image is re-pointed, no commit reverted, nothing redeployed.
+
+**IT DOES NOW TRANSITION, AND THIS PARAGRAPH USED TO SAY OTHERWISE.** Until ADR-0022 the sentence
+above read "and nothing here transitions"; a rollout that production confirmed appended a row and
+left the record `approved` forever, so a change that had already happened went on authorising
+itself. `app/deploy_settlement.py` settles such a record, in a second transaction, on the verdict
+THIS server derived. The old sentence is corrected here rather than quietly deleted, the way
+`app/scopes.py` corrected its own in increment 5a: a file whose subject is "what an observation
+does" giving the wrong answer is the drift this repository keeps paying for.
+
+Whether a change is FINISHED is now answered two ways and they do not overlap. Policy grants,
+a human revokes, and an observed landing settles — none of them is a caller choosing a status.
 """
 
 from __future__ import annotations
