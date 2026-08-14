@@ -19,6 +19,7 @@ from app.main import app
 from app.scopes import (
     CALLER_CHOSEN_STATUS_ROUTES,
     NARROW_SCOPES,
+    OBSERVE,
     PROPOSE,
     SCOPE_ROUTES,
     STATUS_MOVING_ROUTES,
@@ -115,16 +116,21 @@ def test_the_only_status_a_narrow_scope_can_move_is_the_one_policy_decides(scope
     Increment 5b adds the retirement ingress to the same scope. It is the same shape — a fact in,
     a server decision out — with one property proposal does not have: its only outcome REMOVES
     permission, which is what makes it acceptable on an observation this service cannot check.
+
+    ADR-0022 gives `observe` its first one, and it is the narrowest of the three: the observation
+    ingress settles a record whose rollout production confirmed, on a verdict this server derived
+    rather than on anything the caller said. `read` still reaches none, which is the control —
+    without it this test would pass on a table that had quietly given every narrow scope a
+    status-moving route.
     """
     reached = SCOPE_ROUTES[scope] & STATUS_MOVING_ROUTES
-    expected = (
-        {
+    expected = {
+        PROPOSE: {
             ("POST", "/api/deploy-changes"),
             ("POST", "/api/items/{item_id}/deploy-retirement"),
-        }
-        if scope == PROPOSE
-        else set()
-    )
+        },
+        OBSERVE: {("POST", "/api/items/{item_id}/deploy-observation")},
+    }.get(scope, set())
     assert reached == expected, f"the '{scope}' scope reaches {sorted(reached)}"
 
 
@@ -158,11 +164,14 @@ def test_status_moving_routes_is_complete_against_the_live_table() -> None:
     directions. An exclusion is a claim about behaviour, so it has to be re-read when the
     behaviour changes -- this one was green while the propose scope held the only route in the
     application that can put a record into `approved`.
+
+    THE OBSERVATION INGRESS PROVED THE POINT A SECOND TIME. It was excluded here until ADR-0022, on
+    the claim that it "moves status by exactly nothing" -- true when written, and false the moment
+    a confirmed rollout began settling the record it describes. Same lesson, same file, one
+    increment later: the exclusions are the part of this test that goes stale.
     """
     writes = {(method, path) for method, path in _api_routes() if method != "GET"}
     not_status_moving = {
-        # Appends an observation. Writes no ChangeAttempt and moves status by exactly nothing.
-        ("POST", "/api/items/{item_id}/deploy-observation"),
         # Sets `pr_url` and records a `pr_linked` event. Not a status transition -- but it IS a
         # write, which is why `read` must not reach it (see the PATCH test below).
         ("PATCH", "/api/items/{item_id}"),
@@ -402,7 +411,7 @@ def test_no_narrow_scope_can_reach_the_deploy_policy_with_a_write(client, scoped
         assert client.post("/api/deploy-policy", headers=_bearer(token)).status_code in (403, 405)
 
 
-def test_the_caller_chosen_exception_is_exactly_the_two_fact_shaped_routes() -> None:
+def test_the_caller_chosen_exception_is_exactly_the_three_fact_shaped_routes() -> None:
     """`CALLER_CHOSEN_STATUS_ROUTES` states a judgment, so it needs its own cross-check.
 
     A mutation caught this: emptying it left every scope test green, because an empty set
@@ -411,18 +420,19 @@ def test_the_caller_chosen_exception_is_exactly_the_two_fact_shaped_routes() -> 
     derived set is not self-guarding just because it is derived; what is derived is its
     CONTENT, and what needs pinning is the size and direction of the subtraction.
 
-    ADR-0019 increment 5b widened it from one route to two, and the test's NAME moved with it —
-    this module's own recorded lesson is that a name is a behavioural claim. Both members take a
-    FACT and let the server decide what follows; a third member that took a status would break
-    the property rather than extend the list.
+    ADR-0019 increment 5b widened it from one route to two and ADR-0022 to three, and the test's
+    NAME moved each time — this module's own recorded lesson is that a name is a behavioural claim.
+    Every member takes a FACT and lets the server decide what follows; a member that took a status
+    would break the property rather than extend the list.
     """
     exception = STATUS_MOVING_ROUTES - CALLER_CHOSEN_STATUS_ROUTES
     assert exception == {
         ("POST", "/api/deploy-changes"),
         ("POST", "/api/items/{item_id}/deploy-retirement"),
-    }, f"the exception is no longer exactly the two fact-shaped routes: {sorted(exception)}"
+        ("POST", "/api/items/{item_id}/deploy-observation"),
+    }, f"the exception is no longer exactly the three fact-shaped routes: {sorted(exception)}"
     assert CALLER_CHOSEN_STATUS_ROUTES < STATUS_MOVING_ROUTES
-    assert len(CALLER_CHOSEN_STATUS_ROUTES) == len(STATUS_MOVING_ROUTES) - 2
+    assert len(CALLER_CHOSEN_STATUS_ROUTES) == len(STATUS_MOVING_ROUTES) - 3
 
 
 def test_the_propose_credential_reaches_the_retirement_it_exists_for(
@@ -465,6 +475,65 @@ def test_the_other_narrow_credentials_cannot_retire(
         headers=_bearer(TOKENS[scope]),
     )
     assert response.status_code == 403
+
+
+def test_the_observe_credential_reaches_the_settlement_it_exists_for(
+    client: TestClient, scoped: None, deploy_payload, db
+) -> None:
+    """ADR-0022. Not merely 'not 403' -- the record actually moves, on the observe scope.
+
+    The watcher is the only thing positioned to see a rollout confirm, and until this it could do
+    nothing about it: `resolve` is the full credential's. It never names a status; the server
+    derives the verdict from the coordinates and settles on that.
+    """
+    item = client.post(
+        "/api/deploy-changes", json=deploy_payload(), headers=_bearer(TOKENS["propose"])
+    ).json()
+    response = client.post(
+        f"/api/items/{item['id']}/deploy-observation",
+        json=_confirmed_rollout(item["pull_request_number"]),
+        headers=_bearer(TOKENS["observe"]),
+    )
+    assert response.status_code == 201
+    assert response.json()["item_status"] == "resolved"
+
+
+@pytest.mark.parametrize("scope", ["read", "propose"])
+def test_the_other_narrow_credentials_cannot_observe(
+    client: TestClient, scoped: None, scope: str
+) -> None:
+    """The control. Without it the test above proves only that SOME credential works — and since
+    the observation ingress now moves a status, that matters more than it did."""
+    response = client.post(
+        "/api/items/1/deploy-observation",
+        json=_confirmed_rollout(42),
+        headers=_bearer(TOKENS[scope]),
+    )
+    assert response.status_code == 403
+
+
+def _confirmed_rollout(pull_request_number: int) -> dict:
+    """A rollout that confirmed the merged commit is what production reported."""
+    return {
+        "target_repository": "AlobarQuest/change-manager",
+        "pull_request_number": pull_request_number,
+        "merge_commit_sha": "2ba9f7f2ef4121aef69153fc2e6dd248cfdcf33b",
+        "merged_at": "2026-08-13T08:55:00+00:00",
+        "workflow_path": ".github/workflows/deploy.yml",
+        "workflow_revision": "a47d4b187c93971a5b5915ce87a963bd4ef35e30",
+        "workflow_attestation": "revision_confirmed",
+        "rollout_job": "build-and-deploy",
+        "rollout_job_conclusion": "success",
+        "trigger_step": "Trigger Coolify redeploy",
+        "trigger_step_conclusion": "success",
+        "run_id": 31685940716,
+        "run_attempt": 1,
+        "run_url": "https://github.com/AlobarQuest/change-manager/actions/runs/31685940716",
+        "run_conclusion": "success",
+        "run_concluded_at": "2026-08-13T09:00:00+00:00",
+        "observed_at": "2026-08-13T09:20:13+00:00",
+        "actor": "deploy-watcher",
+    }
 
 
 def test_the_propose_credential_still_cannot_resolve_anything_else(

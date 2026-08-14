@@ -324,10 +324,23 @@ class TestRecording:
         page = client.get(f"/api/items/{item}/deploy-observations", headers=m2m).json()
         assert page["merge_commits_observed"] == [MERGE, OTHER]
 
-    def test_observing_moves_nothing(self, client, m2m, item):
-        """The whole reason increment 1's executor guards need no change."""
+    def test_observing_a_rollout_that_did_not_confirm_moves_nothing(self, client, m2m, item):
+        """The whole reason increment 1's executor guards need no change.
+
+        REWRITTEN BY ADR-0022, and the rewrite is the point rather than a repair. This test used to
+        assert that observing moves nothing AT ALL, which was the property until a confirmed
+        rollout began settling the record. What survives -- and is the half the executor guards
+        actually rest on -- is that an observation which does not establish a landing moves nothing,
+        and that no observation ever writes a `ChangeAttempt` or reaches the execution lifecycle.
+        A failed rollout is the case that most needs the record left alone: somebody has to decide
+        whether to roll back.
+        """
         before = client.get(f"/api/items/{item}", headers=m2m).json()["status"]
-        client.post(f"/api/items/{item}/deploy-observation", json=observation(), headers=m2m)
+        client.post(
+            f"/api/items/{item}/deploy-observation",
+            json=observation(run_conclusion="failure"),
+            headers=m2m,
+        )
         after = client.get(f"/api/items/{item}", headers=m2m).json()["status"]
         assert before == after == "pending"
 
