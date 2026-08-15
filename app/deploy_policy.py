@@ -311,6 +311,12 @@ _V3_BRAIN_CRITERIA: Final = (
 # `image` rather than `commit` is not a preference either: brain builds from requirements.txt with
 # no lockfile, so rebuilding the same commit can resolve a different dependency set, and rolling
 # back to a commit would be rolling forward into an untested one.
+#
+# AND THIS IS BYTE-COMPARED TOO, so the wording has no more latitude than the criteria above: the
+# producer's copy is `change_proposer.criteria._ROLLBACKS`, and improving the remedy on one side
+# alone stops every brain record conforming. The caveat about a partial rollback belongs here, in a
+# comment, rather than in a step -- prose that has to match another repository byte for byte is the
+# wrong place to record a judgement nobody can act on from the record anyway.
 _V3_BRAIN_ROLLBACK: Final = Rollback(
     steps=(
         "re-point each affected app's moving image tag at the previous per-SHA tag and redeploy",
