@@ -109,9 +109,12 @@ def test_a_non_conformant_proposal_stays_pending_and_says_why(client, m2m, deplo
 
 
 def test_a_repository_outside_the_policy_is_not_approved(client, m2m, db):
+    """The subject was `alobarquest/brain` until version 3 admitted it. Any repository whose
+    landing this estate has not pinned a rollout and a remedy for will do; the orchestrator's own
+    repository is one where landing is inert, so it will never be a subject of this policy."""
     body = client.post(
         "/api/deploy-changes",
-        json=conformant(target_repository="alobarquest/brain"),
+        json=conformant(target_repository="alobarquest/orchestrator"),
         headers=m2m,
     ).json()
     assert body["status"] == "pending"
@@ -357,7 +360,7 @@ def test_the_landing_conditions_are_declared_but_not_evaluated_here():
 def test_the_policy_route_serves_the_conditions_a_landing_needs(client, m2m):
     body = client.get("/api/deploy-policy", headers=m2m).json()
     assert body["version"] == CURRENT_VERSION
-    assert body["repositories"] == ["alobarquest/change-manager"]
+    assert body["repositories"] == ["alobarquest/brain", "alobarquest/change-manager"]
     assert body["landing"]["update_types"] == ["semver-minor", "semver-patch"]
     assert body["landing"]["require_head_current_with_base"] is True
 
@@ -391,7 +394,7 @@ def test_the_current_version_pins_the_rollout_workflow_of_every_repository_it_na
     """A repository the policy admits with no pinned workflow is a repository whose criteria
     describe bytes nobody named, which is the hole this version exists to close."""
     policy = current()
-    assert CURRENT_VERSION == 2
+    assert CURRENT_VERSION == 3
     for repository in policy.repositories:
         pin = policy.landing.rollout_workflows.get(repository)
         assert pin is not None, f"{repository} is admitted with no rollout-workflow pin"
@@ -419,10 +422,14 @@ def test_the_route_serves_the_pin_so_the_landing_party_holds_no_copy(client, m2m
     """The whole reason the condition is declared here and evaluated there."""
     landing = client.get("/api/deploy-policy", headers=m2m).json()["landing"]
     assert landing["rollout_workflows"] == {
+        "alobarquest/brain": {
+            "path": ".github/workflows/ci.yml",
+            "blob_sha": "c5c088719cd340f0071b875c6a82439292ed8756",
+        },
         "alobarquest/change-manager": {
             "path": ".github/workflows/deploy.yml",
             "blob_sha": "a47d4b187c93971a5b5915ce87a963bd4ef35e30",
-        }
+        },
     }
 
 
@@ -470,7 +477,7 @@ def test_the_two_version_fields_are_not_the_same_question(client, m2m, db):
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 1
-    assert served["landing_policy_version"] == CURRENT_VERSION == 2
+    assert served["landing_policy_version"] == CURRENT_VERSION == 3
 
 
 def test_a_drift_record_carries_no_landing_conditions(client, m2m, db):
@@ -589,3 +596,197 @@ def test_a_record_a_HUMAN_approved_is_never_restamped_as_policy_approved(client,
     assert row.policy_version is None, "a human's approval was restamped as a policy approval"
     assert row.decided_by == "hq-correction", "a human's name was overwritten"
     assert len(_events(db, item_id, "approved")) == before
+
+
+# ---------------------------------------------------------------------------
+# Version 3 -- brain joins (ADR-0019).
+# ---------------------------------------------------------------------------
+
+BRAIN = "alobarquest/brain"
+CHANGE_MANAGER = "alobarquest/change-manager"
+
+# The pre-#47 revision of brain's ci.yml. A green run at THESE bytes proved only that a domain
+# answered 2xx thirty seconds after the webhook, which version 1 named as the reason brain could
+# not join. Kept as a literal so the pin below is asserted against the thing it must not be.
+_BRAIN_ROLLOUT_BEFORE_THE_REVISION_POLL = "6cad4cf9f03d816ce8bf8fb87fa67d8634486ef1"
+
+
+def brain_conformant(**overrides) -> dict:
+    """A brain proposal as the producer derives one, built from the policy it must match."""
+    policy = current()
+    return {
+        "target_repository": BRAIN,
+        "pull_request_number": 33,
+        "change_class": "dependency-update",
+        "risk": "caution",
+        "reasoning": "landing this pull request redeploys production",
+        "acceptance_criteria": list(policy.acceptance_criteria[BRAIN]),
+        "rollback_plan": policy.rollback_plans[BRAIN].as_stored(),
+        "actor": "change-proposer",
+        **overrides,
+    }
+
+
+def test_version_three_admits_brain_and_leaves_change_manager_exactly_as_it_was():
+    """Both halves, because either alone is the wrong change.
+
+    A version that admits brain by loosening something change-manager relied on is a regression
+    with three consecutive autonomous landings behind it; a version that changes change-manager's
+    terms would silently re-decide what those landings were approved under.
+    """
+    v2, v3 = policy_for(2), policy_for(3)
+    assert v2 is not None and v3 is not None
+
+    assert v3.repositories == v2.repositories | {BRAIN}
+    assert v3.change_classes == v2.change_classes
+    assert v3.risks == v2.risks
+    assert v3.landing.update_types == v2.landing.update_types
+    assert v3.landing.require_head_current_with_base is True
+
+    cm = CHANGE_MANAGER
+    assert v3.acceptance_criteria[cm] == v2.acceptance_criteria[cm]
+    assert v3.rollback_plans[cm] == v2.rollback_plans[cm]
+    assert v3.landing.rollout_workflows[cm] == v2.landing.rollout_workflows[cm]
+
+
+def test_brains_criteria_are_its_own_and_not_change_managers():
+    """Four applications is the whole difference, so a shared tuple would be a record that lies
+    about what its rollout checked."""
+    policy = current()
+    assert policy.acceptance_criteria[BRAIN] != policy.acceptance_criteria[CHANGE_MANAGER]
+    assert policy.rollback_plans[BRAIN] != policy.rollback_plans[CHANGE_MANAGER]
+
+
+def test_brains_criteria_transcribe_the_revision_poll_and_not_the_liveness_poll():
+    """The discriminating assertion on the judgment this version makes.
+
+    Every earlier revision of brain's rollout attested that a domain ANSWERED, and the producer
+    appends an explicit "does NOT prove the merged build is the one serving production" line to
+    criteria derived from one. Transcribing an older attestation here would therefore be visible
+    as that line -- and would admit, under a policy whose whole premise is that brain now verifies
+    the revision, criteria saying it does not.
+
+    The second half is the ceiling this version accepted deliberately: what is attested is every
+    application the rollout TRIGGERED, never "all four", because the bytes skip an application
+    whose Coolify secret is unset and no pin over bytes can read a secret.
+    """
+    criteria = current().acceptance_criteria[BRAIN]
+    assert not any("does NOT prove" in c for c in criteria)
+    assert any("every brain application this rollout triggered" in c for c in criteria)
+    assert not any("all four" in c for c in criteria)
+
+
+def test_brains_criteria_are_the_pair_the_producer_derives_for_this_workflow_revision():
+    """THE CROSS-REPO PAIR, spelled out, because nothing mechanical joins the two sides.
+
+    `objections` byte-compares a record's stored criteria against this tuple, and a record's
+    stored criteria are what the orchestrator's `change_proposer.criteria.acceptance_criteria`
+    derived from its transcription of the blob pinned below. The same literal is asserted there,
+    in `tests/change_proposer/test_change_proposer.py`. They drift, and every brain record objects
+    `acceptance_criteria_not_ratified` forever with nothing anywhere saying which side moved.
+
+    A literal rather than a property assertion for exactly that reason: a substring check leaves
+    most of the string free to move silently, and a mutation of the wording proved it does. This
+    cannot be edited on one side without editing a pinned test on that side, which is the signal.
+
+    Two criteria and no third: the producer appends its "does NOT prove" line only below the
+    revision-confirming attestation level, and this revision is at it.
+    """
+    assert current().acceptance_criteria[BRAIN] == (
+        "the rollout runs for this merge on alobarquest/brain, and its production step "
+        "concludes success (job 'deploy', step 'Deploy brain apps')",
+        "every brain application this rollout triggered answered /api/health reporting the "
+        "merged commit as its revision and a status of ok, within 600 seconds; an application "
+        "whose Coolify UUID secret is unset is neither triggered nor checked, and a rollout "
+        "that triggered none fails rather than passing empty",
+    )
+
+
+def test_brains_rollback_plan_is_the_one_the_producer_transcribes():
+    """The same cross-repo pair, one field over, and it fails the same silent way: `rollback_plan`
+    is compared byte-for-byte too, so a remedy improved on one side alone stops every brain record
+    conforming. The orchestrator's copy is `change_proposer.criteria._ROLLBACKS`."""
+    assert current().rollback_plans[BRAIN].as_stored() == {
+        "steps": [
+            "re-point each affected app's moving image tag at the previous per-SHA tag "
+            "and redeploy",
+            "revert the merge commit on main, so main and production agree again",
+        ],
+        "target": "image",
+    }
+
+
+def test_brains_pin_names_the_workflow_that_verifies_the_revision():
+    """`ci.yml`, not `deploy.yml` -- brain has no deploy.yml, its deploy job lives in the CI
+    workflow -- and the blob is the revision that replaced the liveness poll. A pin left on the
+    superseded revision would admit exactly the criteria the test above refuses.
+    """
+    pin = current().landing.rollout_workflows[BRAIN]
+    assert pin.path == ".github/workflows/ci.yml"
+    assert pin.blob_sha == "c5c088719cd340f0071b875c6a82439292ed8756"
+    assert pin.blob_sha != _BRAIN_ROLLOUT_BEFORE_THE_REVISION_POLL
+    assert pin != current().landing.rollout_workflows[CHANGE_MANAGER]
+
+
+def test_a_brain_proposal_conforms_and_is_approved_by_the_server(client, m2m, db):
+    """The affirmative case. A version that admits a repository nothing can conform to is a
+    version that reads as shipped and lands nothing."""
+    response = client.post("/api/deploy-changes", json=brain_conformant(), headers=m2m)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "approved"
+    assert body["policy_version"] == CURRENT_VERSION
+    row = db.get(ChangeItem, body["id"])
+    assert row is not None and row.decided_by == POLICY_ACTOR
+
+
+def test_a_brain_record_carrying_change_managers_criteria_is_refused(client, m2m):
+    """The control on the affirmative case above: approval is by conformance to what a human
+    pinned FOR THIS REPOSITORY, so the criteria are not interchangeable between the two."""
+    borrowed = brain_conformant(
+        acceptance_criteria=list(current().acceptance_criteria[CHANGE_MANAGER])
+    )
+
+    body = client.post("/api/deploy-changes", json=borrowed, headers=m2m).json()
+
+    assert body["status"] == "pending"
+    assert body["policy_version"] is None
+
+
+def test_a_record_approved_under_version_two_is_bound_until_it_is_re_approved(client, m2m, db):
+    """The bump BINDS, which is what makes a narrowing take effect on approvals that already
+    exist. Production item 50 is the live subject: approved under version 2 when this shipped.
+
+    This service never re-decides on a read, so the record keeps the version that approved it and
+    the two version fields disagree -- which is what the landing party refuses on. Both directions
+    are asserted: the disagreement, and the repeat proposal that clears it.
+    """
+    item_id = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()["id"]
+    row = db.get(ChangeItem, item_id)
+    assert row is not None
+    row.policy_version = 2
+    db.commit()
+
+    served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
+    assert served["policy_version"] == 2
+    assert served["landing_policy_version"] == 3
+
+    replay = client.post("/api/deploy-changes", json=conformant(), headers=m2m)
+
+    assert replay.json()["policy_version"] == 3
+
+
+def test_version_three_does_not_widen_what_may_land(client, m2m):
+    """brain's queue holds two requirement-range bumps, and they must stay unlandable.
+
+    A requirement range states no single delta, so it carries no update type at all and is refused
+    for want of a parseable delta -- by the party that reads GitHub, since this service cannot.
+    What is asserted here is that version 3 gave brain no allowance of its own: one update-type set
+    governs both repositories, and it is still patch and minor.
+    """
+    landing = client.get("/api/deploy-policy", headers=m2m).json()["landing"]
+
+    assert landing["update_types"] == ["semver-minor", "semver-patch"]
+    assert set(landing["rollout_workflows"]) == {BRAIN, CHANGE_MANAGER}
+    assert "update_types" not in landing["rollout_workflows"][BRAIN]

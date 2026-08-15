@@ -255,11 +255,152 @@ V2: Final = DeployPolicy(
     landing=_V2_LANDING,
 )
 
+# ---------------------------------------------------------------------------
+# Version 3 -- Devon, 2026-08-15. Versions 1 and 2 above are retained verbatim.
+# ---------------------------------------------------------------------------
+#
+# ADDS A SECOND REPOSITORY AND CHANGES NOTHING ELSE. `alobarquest/brain` joins on the condition
+# version 1 named for it: "that repository joins by a one-line bump of this policy once its
+# rollout verifies the revision". That shipped 2026-08-14 as brain#47 (merge `1d9e7d38`) and is
+# pinned below by the bytes that make it. Every term `change-manager` relied on is unchanged and
+# reuses the same constants, so this is additive for it -- and it is nevertheless refused at the
+# landing until re-approved, because the landing binds an approval to the CURRENT version. That
+# is version 2's narrowing-at-the-act mechanism, and it costs nothing here: the only approved
+# record when this was written is a requirement-range bump that no version can land.
+
+# WHAT A `brain` APPROVAL ATTESTS -- BYTE-IDENTICAL TO WHAT THE PRODUCER DERIVES, which is the
+# constraint that decides the wording rather than a preference. The orchestrator's transcription
+# of `c5c0887` is the other copy of this judgment (`deploy_watcher/workflows.py`), and
+# `objections` below compares the two literally: they drift, and every `brain` record objects
+# `acceptance_criteria_not_ratified` forever with nothing saying which side moved.
+#
+# AND IT IS DELIBERATELY NOT "ALL FOUR APPLICATIONS". brain's rollout triggers four Coolify
+# applications from one image and skips any whose UUID secret is unset, in the trigger loop and
+# in the verification loop alike. All four are configured today and all four reported the merged
+# revision on that workflow's first live run, so "all four" would be true of today -- and it is
+# refused on three grounds. The criteria transcribe what a rollout's BYTES attest, and no pin
+# over bytes can read a secret's value, so the strong form would be a transcription that lies.
+# A record whose criteria say four when three ran would describe something that did not happen,
+# in the one field a later reader holds the deploy to. And it would not buy the property it is
+# wanted for: removing a secret moves no bytes, so the pin does not fire, the rollout stays
+# green, and the criteria would quietly overstate a passing run rather than refuse it.
+#
+# So the ceiling is RECORDED rather than closed, and the record says where it is. A rollout that
+# triggered NONE now fails -- that was the one path through the step that could not fail, and
+# brain#47 closed it -- so an empty deploy cannot pass. Three of four still can. Making "all
+# four" true means brain's workflow refusing an unset secret, which is a byte change, hence a
+# new pin, a new transcription and a new version of this policy. That is the right cost for
+# changing how many applications a human is pre-approving a deploy of.
+_V3_BRAIN_CRITERIA: Final = (
+    "the rollout runs for this merge on alobarquest/brain, and its production step concludes "
+    "success (job 'deploy', step 'Deploy brain apps')",
+    "every brain application this rollout triggered answered /api/health reporting the merged "
+    "commit as its revision and a status of ok, within 600 seconds; an application whose Coolify "
+    "UUID secret is unset is neither triggered nor checked, and a rollout that triggered none "
+    "fails rather than passing empty",
+)
+
+# `each affected app's`, where change-manager's says `the moving image tag`, and the difference is
+# the whole of brain: four applications pull one image, so putting production back is four
+# operations and any of them can fail on its own. A rollback that reaches three leaves the four
+# split across images -- a state no acceptance criterion describes and no run reports, because the
+# rollout that would have checked them is not the thing being run. Reverting the merge is
+# therefore not the tidy second step it is for change-manager; it is what makes the four agree
+# again whichever way the first step went.
+#
+# `image` rather than `commit` is not a preference either: brain builds from requirements.txt with
+# no lockfile, so rebuilding the same commit can resolve a different dependency set, and rolling
+# back to a commit would be rolling forward into an untested one.
+_V3_BRAIN_ROLLBACK: Final = Rollback(
+    steps=(
+        "re-point each affected app's moving image tag at the previous per-SHA tag and redeploy",
+        "revert the merge commit on main, so main and production agree again",
+    ),
+    target="image",
+)
+
+_V3_LANDING: Final = LandingConditions(
+    update_types=frozenset({SEMVER_PATCH, SEMVER_MINOR}),
+    require_head_current_with_base=True,
+    rationale=(
+        "Patch and minor only, which is STRICTER than the cascade governing the repositories "
+        "where landing changes nothing already serving, for the reason version 1 gives: the "
+        "rollout job does not run on a pull request, only on a landing, so a major bump to the "
+        "workflow-automation ecosystem would be exercised for the first time during the very "
+        "rollout it is supposed to gate. That holds for both repositories this version admits -- "
+        "brain's deploy job is gated on a push to main and fires on nothing else. A requirement-"
+        "RANGE bump carries no update type at all and is refused for want of a parseable delta. "
+        "THAT IS THE INTENDED BEHAVIOUR AND NOT A PARSER DEFECT; do not 'fix' it. Freshness is a "
+        "policy condition rather than a strict branch, because a strict branch serialises human "
+        "merges too and applies estate-wide behaviour nobody versions. "
+        "WHAT VERSION 3 ADDS IS A SECOND PINNED ROLLOUT, not a second kind of condition. The pin "
+        "version 2 introduced is what makes a repository's acceptance criteria describe bytes "
+        "that still exist, so admitting a repository without one would admit criteria nobody "
+        "could hold to the thing that runs. brain's rollout is pinned at `.github/workflows/"
+        "ci.yml` -- it has no deploy.yml, its deploy job lives in the CI workflow, and its "
+        "revision poll was deliberately kept inline in that file rather than moved to a script "
+        "so that these bytes cover it."
+    ),
+    rollout_workflows={
+        "alobarquest/change-manager": WorkflowPin(
+            path=".github/workflows/deploy.yml",
+            # `191ec5a`, 2026-08-07 -- unchanged from version 2, and the same constant is not
+            # reused only because a version declares its own pins rather than borrowing a
+            # superseded version's mapping.
+            blob_sha="a47d4b187c93971a5b5915ce87a963bd4ef35e30",
+        ),
+        "alobarquest/brain": WorkflowPin(
+            path=".github/workflows/ci.yml",
+            # `1d9e7d38`, 2026-08-14 -- the revision that replaces the liveness poll with a
+            # revision poll, against an image built with GIT_SHA and an /api/health that reports
+            # it. Read from brain's `main` on 2026-08-15 rather than transcribed from a handoff:
+            # it is the only revision of this workflow under which a green run means what the
+            # criteria above say.
+            blob_sha="c5c088719cd340f0071b875c6a82439292ed8756",
+        ),
+    },
+)
+
+# change-manager's criteria and remedy are UNCHANGED from version 1, so they are the same
+# constants rather than a third transcription of one judgment.
+V3: Final = DeployPolicy(
+    version=3,
+    decided="2026-08-15",
+    rationale=(
+        "Two repositories. alobarquest/brain joins on the condition version 1 named for it: its "
+        "rollout now waits until every application it deployed reports the merged commit as its "
+        "revision, so a green run establishes that production is serving the change rather than "
+        "that a domain answered. Until 2026-08-14 it attested only the latter, and landing "
+        "unattended under criteria documented as unable to detect the failure is not accepting "
+        "that risk but defeating it. The evidence for widening is three consecutive autonomous "
+        "landings on alobarquest/change-manager, each confirmed against production and each "
+        "settled by the rollout watcher with no human acting. "
+        "What a brain approval attests is narrower than 'all four applications', deliberately, "
+        "and the reasoning is recorded above its criteria: the criteria transcribe what the "
+        "rollout's bytes attest, the bytes skip an application whose Coolify secret is unset, "
+        "and a stronger claim would overstate a passing run without being able to refuse one. "
+        "A rollout that triggers nothing now fails; three of four still passes, and that ceiling "
+        "is stated in the record rather than closed here. Nothing about change-manager changes."
+    ),
+    repositories=frozenset({"alobarquest/change-manager", "alobarquest/brain"}),
+    change_classes=frozenset({"dependency-update"}),
+    risks=frozenset({"caution"}),
+    acceptance_criteria={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_CRITERIA,
+        "alobarquest/brain": _V3_BRAIN_CRITERIA,
+    },
+    rollback_plans={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_ROLLBACK,
+        "alobarquest/brain": _V3_BRAIN_ROLLBACK,
+    },
+    landing=_V3_LANDING,
+)
+
 # Every version ever, retained. A record stores the number that approved it, so an approval stays
 # re-evaluable after the policy has moved on.
-REGISTRY: Final[dict[int, DeployPolicy]] = {policy.version: policy for policy in (V1, V2)}
+REGISTRY: Final[dict[int, DeployPolicy]] = {policy.version: policy for policy in (V1, V2, V3)}
 
-CURRENT_VERSION: Final = 2
+CURRENT_VERSION: Final = 3
 
 
 def policy_for(version: int) -> DeployPolicy | None:
