@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models import ChangeItem
+from app.reconcile import _resolve_absent
 from app.sources import POLICY_APPROVED_SOURCES, PROPOSED_SOURCES, WORK_SOURCE
 
 _WORK_PAYLOAD = {
@@ -227,24 +228,55 @@ def test_reconcile_refuses_a_batch_naming_the_work_source(
     assert "proposed, not derived" in response.json()["detail"]
 
 
-def test_a_drift_batch_does_not_resolve_an_absent_work_item(
-    client: TestClient, m2m: dict[str, str], db: Session
-) -> None:
-    """The structural half of the same guard, asserted where it is true.
+def test_the_resolve_sweep_itself_skips_a_work_item(client: TestClient, m2m, db: Session) -> None:
+    """Asserted one level below `reconcile`, and driving the sweep with source="work".
 
-    `reconcile` refuses a batch that NAMES the source, so a test driving it through the source
-    could not tell whether the sweep's own exclusion is present -- which is how a guard ends up
-    resting entirely on a check in its caller. A `drift` batch reaches the sweep legitimately.
+    THE OBVIOUS TEST HERE CANNOT DISCRIMINATE, and a first version of this file shipped it.
+    Driving `reconcile` with a `drift` batch and asserting a work item survives passes whether
+    or not the sweep carries its own exclusion, because `_resolve_absent` is ALREADY scoped
+    `ChangeItem.source == source` -- a work item is out of a drift sweep's reach for a reason
+    that has nothing to do with the guard. Mutation testing caught it: deleting the exclusion
+    left that test green. Naming the work source is what puts the item in the sweep's scope so
+    the exclusion is the only thing left refusing it.
+
+    Nothing reaches the sweep this way in production today -- `reconcile` refuses a proposed
+    source at its entry -- which is the point: a guard resting entirely on a check in its caller
+    is not a guard a future caller inherits.
     """
-    work_id = _propose(client, m2m).json()["id"]
-    client.post(
-        "/api/sync",
-        json={"generated_at": "2026-08-18T00:00:00Z", "source_report": "r", "escalations": []},
-        headers=m2m,
-    )
-    reloaded = db.get(ChangeItem, work_id)
+    item_id = _propose(client, m2m).json()["id"]
+    assert _resolve_absent(db, source="work", seen_identities=set()) == 0
+    reloaded = db.get(ChangeItem, item_id)
     assert reloaded is not None
     assert reloaded.status == "pending"
+
+
+def test_the_resolve_sweep_still_resolves_a_derived_item(
+    client: TestClient, m2m, db: Session
+) -> None:
+    """The control for the assertion above: same call, derived source, does resolve.
+
+    Without it the test above passes on a sweep that had stopped resolving anything at all.
+    """
+    client.post(
+        "/api/sync",
+        json={
+            "generated_at": "2026-08-18T00:00:00Z",
+            "source_report": "r",
+            "escalations": [
+                {
+                    "proposal_id": "coolify.enable_healthcheck:abc",
+                    "instance": "prod",
+                    "target": {"provider": "coolify", "type": "app", "uuid": "u1", "name": "n1"},
+                    "risk": "low",
+                    "kind": "config",
+                    "reasoning": "health check missing",
+                    "plan": {},
+                }
+            ],
+        },
+        headers=m2m,
+    )
+    assert _resolve_absent(db, source="drift", seen_identities=set()) == 1
 
 
 # --------------------------------------------------------------------------------------
