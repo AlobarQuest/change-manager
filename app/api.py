@@ -35,12 +35,18 @@ from app.schemas import (
     OutcomeIn,
     SyncRequest,
     SyncSummary,
+    WorkChangeIn,
 )
-from app.sources import PROPOSED_SOURCES, ProposedSourceError
+from app.sources import POLICY_APPROVED_SOURCES, PROPOSED_SOURCES, ProposedSourceError
 from app.transitions import TransitionError
 from app.transitions import decide as _do_decide
 from app.transitions import hand_off as _do_hand_off
 from app.transitions import reactivate as _do_reactivate
+from app.work_changes import (
+    WorkChangeConflict,
+    WorkChangeIdentityHeld,
+    propose_work_change,
+)
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_m2m)])
 
@@ -80,9 +86,20 @@ def _item_dict(it: ChangeItem) -> dict:
         # permissive: `status` is the stored decision, and nothing downstream may read this
         # list as an approval. It exists so an operator looking at a pending record can see
         # what a human would have to ratify, instead of diffing two artifacts by hand.
+        # Keyed on `POLICY_APPROVED_SOURCES`, so this is projected onto the records the deploy
+        # policy actually governs. On any other proposed source (ADR-0026's work proposals)
+        # `objections` would answer `target_repository_unreadable` -- a record failing to conform
+        # to a policy that was never about it, which is the estate's "not applicable is not the
+        # same answer as not met" four times over.
         "policy_objections": list(objections(current_policy(), it))
-        if it.source in PROPOSED_SOURCES
+        if it.source in POLICY_APPROVED_SOURCES
         else [],
+        # ADR-0026. The package revision this work is about, carried on the record so the carry
+        # reads a locator rather than parsing one out of `identity`. Null on every other source,
+        # which is what `package_subject` asserts and what the carry refuses on.
+        "package_id": it.package_id,
+        "package_revision": it.package_revision,
+        "package_source_repository": it.package_source_repository,
         # ADR-0019 increment 5b. What the CURRENT policy requires of the act, carried beside the
         # record the act would be about. `GET /api/deploy-policy` serves the same thing standing
         # alone and is the surface a person reads; this is the surface the landing party reads,
@@ -102,7 +119,7 @@ def _item_dict(it: ChangeItem) -> dict:
         # same field as `policy_version` above, which is the version that approved this record.
         "landing_policy_version": current_policy().version,
         "landing_conditions": landing_conditions_dict(current_policy())
-        if it.source in PROPOSED_SOURCES
+        if it.source in POLICY_APPROVED_SOURCES
         else None,
     }
 
@@ -126,6 +143,27 @@ def propose_deploy(body: DeployChangeIn, response: Response, db: Session = Depen
     try:
         item, created = propose_deploy_change(db, body)
     except (DeployChangeConflict, DeployChangeIdentityHeld) as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    response.status_code = 201 if created else 200
+    return _item_dict(item)
+
+
+@router.post("/work-changes", status_code=201)
+def propose_work(body: WorkChangeIn, response: Response, db: Session = Depends(get_db)) -> dict:
+    """Propose work for the software delivery system to carry out (ADR-0026).
+
+    201 when the record is created, 200 when an identical proposal already existed, 409 when a
+    different one did or when the identity is held by another pipeline.
+
+    The record is created `pending`. A human approves it here -- this route cannot, and neither
+    can any other caller: approval is the ordinary decision, and it is the whole reason `work`
+    is outside `POLICY_APPROVED_SOURCES`. Nothing in the change-window lanes will ever execute
+    it; the carry (orchestrator `work-carrier`) reads the approved record and prepares an
+    intake for it.
+    """
+    try:
+        item, created = propose_work_change(db, body)
+    except (WorkChangeConflict, WorkChangeIdentityHeld) as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     response.status_code = 201 if created else 200
     return _item_dict(item)

@@ -13,7 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
-from app.sources import PROPOSED_SOURCES
+from app.sources import PROPOSED_SOURCES, WORK_SOURCE
 
 
 class ChangeItem(Base):
@@ -79,6 +79,42 @@ class ChangeItem(Base):
     # `landing_ledger`'s rule pin already does for a landing, in the same estate, for the same
     # reason.
     policy_version: Mapped[int | None] = mapped_column(Integer)
+    # ADR-0026: WHICH APPROVED INTENT PACKAGE EFFECTS THIS WORK. A work proposal names a
+    # package the orchestrator can already intake; it does not describe the work in prose and
+    # leave somebody to find one. The three together are a locator, and they are the whole
+    # payload the carry needs -- every other field of a package intake is derived from the
+    # package itself by `orchestrator emit-intake-payload`.
+    #
+    # DISTINCT COLUMNS RATHER THAN KEYS IN `plan`, for the reason ADR-0019 gives one screen up
+    # about `acceptance_criteria` and `rollback_plan`: the proposal route refuses a record that
+    # lacks them, and a refusal needs a column to be absent from. The infrastructure-shaped
+    # columns above do not fit -- `resource_uuid`/`resource_name` identify a Coolify resource,
+    # and `target_repository` is ADR-0019's deploying-merge subject, which this is not.
+    # Null on every other source.
+    package_id: Mapped[str | None] = mapped_column(String)
+    package_revision: Mapped[int | None] = mapped_column(Integer)
+    package_source_repository: Mapped[str | None] = mapped_column(String)
+
+    @property
+    def package_subject(self) -> tuple[str, int, str] | None:
+        """The (package, revision, repository) this work proposal is about, or None.
+
+        The triple rather than a boolean, for the reason `merge_subject` gives: one definition
+        of "names a package", which callers narrow off, instead of a predicate asserting the
+        fields are present and every caller re-checking that they are.
+
+        Keyed on `WORK_SOURCE` and not on `PROPOSED_SOURCES`, which is the same care
+        `names_a_merge` takes in the other direction: "proposed" and "names a package" coincide
+        over no source but this one, and a future proposed source that has nothing to do with
+        intent packages must not read as one that does.
+        """
+        if self.source != WORK_SOURCE:
+            return None
+        if self.package_id is None or self.package_revision is None:
+            return None
+        if self.package_source_repository is None:
+            return None
+        return self.package_id, self.package_revision, self.package_source_repository
 
     @property
     def has_authorized_executor(self) -> bool:

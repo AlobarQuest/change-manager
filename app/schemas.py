@@ -155,6 +155,52 @@ class DeployChangeIn(BaseModel):
         return [_required_text(c, "acceptance_criteria[]") for c in v]
 
 
+class WorkChangeIn(BaseModel):
+    """A proposed piece of work for the software delivery system to carry out (ADR-0026).
+
+    The record is the DECISION; the orchestrator holds everything after approval. What makes
+    it carryable is that it names an approved intent package rather than describing work in
+    prose: every other field of an orchestrator package intake is derived from the package
+    itself, so a locator plus a human approval is the whole of what has to cross.
+
+    change-manager is the registrar here exactly as it is for a deploying merge. It does not
+    read the package, does not ask the orchestrator whether it exists, and cannot -- it has no
+    egress. The carry verifies the locator against the real checkout before it prepares
+    anything, and refuses rather than guessing; a registrar that inferred what it was told
+    could not later be checked against the thing that told it.
+    """
+
+    # Nothing extra is accepted, for `DeployChangeIn`'s reason: a caller that believes it is
+    # setting `plan`, or that mistyped `note`, should learn so rather than have it dropped.
+    model_config = ConfigDict(extra="forbid")
+
+    package_id: str
+    # strict, and bounded by int4 because `package_revision` is an Integer column: pydantic's
+    # lax mode reads `true` as 1, filing the proposal against revision 1 of the package -- and
+    # if a revision-1 record exists, replaying onto it and answering "already recorded". The
+    # ceiling is the one SQLite accepts and production Postgres refuses, which is the half of
+    # the estate the test suite cannot see.
+    package_revision: int = Field(gt=0, le=2_147_483_647, strict=True)
+    package_source_repository: str  # "owner/repo" -- where the package is authored
+    risk: str
+    reasoning: str
+    actor: str  # caller-declared; see the attribution note in the ADR-0019 plan
+    note: str | None = None
+
+    @field_validator("package_source_repository")
+    @classmethod
+    def _owner_slash_repo(cls, v: str) -> str:
+        text = _required_text(v, "package_source_repository")
+        if not _REPOSITORY.fullmatch(text):
+            raise ValueError("package_source_repository must be a GitHub 'owner/repo' name")
+        return text
+
+    @field_validator("package_id", "risk", "reasoning", "actor")
+    @classmethod
+    def _not_blank(cls, v: str, info) -> str:
+        return _required_text(v, info.field_name)
+
+
 class DeployRetirementIn(BaseModel):
     """An observed fact about a deploying-merge record's subject (ADR-0019 increment 5b).
 
