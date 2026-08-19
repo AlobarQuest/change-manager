@@ -112,3 +112,13 @@ def test_downgrade_keeps_the_record_and_its_history_and_parks_it():
         (1, "migration", "wontfixed", "approved", "wontfix"),
     ]
     assert not (_DEPLOY_COLUMNS & cols)
+
+
+def test_change_items_has_the_work_proposal_locator() -> None:
+    """ADR-0026: the three columns the carry reads instead of parsing `identity`."""
+    from sqlalchemy import inspect
+
+    from app.models import ChangeItem
+
+    columns = {c.name for c in inspect(ChangeItem).columns}
+    assert {"package_id", "package_revision", "package_source_repository"} <= columns

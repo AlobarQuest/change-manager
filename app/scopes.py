@@ -61,6 +61,13 @@ SCOPE_ROUTES: Final[dict[str, frozenset[tuple[str, str]]]] = {
     PROPOSE: _READ_ROUTES
     | {
         ("POST", "/api/deploy-changes"),
+        # ADR-0026. Proposing work for the delivery system. It is here with the deploy proposal
+        # because it is the same act -- a caller asserting a change it wants made -- and it is
+        # STRICTLY WEAKER than that one: the deploy ingress runs the policy and can therefore
+        # write `approved`, while this route creates a `pending` record and can reach no other
+        # status. A human approves it, which is the property ADR-0026 decision 5 rests on and
+        # the reason this entry is not also in `STATUS_MOVING_ROUTES` below.
+        ("POST", "/api/work-changes"),
         # ADR-0019 increment 5b. The producer that enumerates pull requests waiting to happen is
         # the only thing positioned to see one CLOSED without merging, and a record standing for a
         # change that can never happen is the hole increment 5b closes. It is here rather than as
@@ -98,6 +105,16 @@ STATUS_MOVING_ROUTES: Final = frozenset(
         # though the caller never names that status -- this set is about what MOVES, and the set
         # below is about what a caller may CHOOSE.
         ("POST", "/api/items/{item_id}/deploy-retirement"),
+        # ADR-0026. The work-proposal ingress. It is here on the CONSERVATIVE reading, and the
+        # conservative reading is the one this file's own history argues for: today the route
+        # writes a `pending` record and a repeat is a pure no-op, so an exclusion claiming "it
+        # cannot write to an existing row" would be true -- and that is word for word the claim
+        # the deploy ingress carried until increment 5a falsified all three of its clauses, and
+        # the shape the observation ingress carried until ADR-0022 falsified its. An exclusion
+        # is a claim about behaviour, and this one would be a claim about behaviour that has not
+        # been built yet. Listing it costs nothing while the claim holds and is already correct
+        # if a policy is ever given to this pipeline.
+        ("POST", "/api/work-changes"),
         # ADR-0022. Recording a rollout observation settles the record when the rollout confirmed
         # the change landed, so this route moves a status too -- and until that ADR it did not,
         # which is exactly why it has to be added here rather than left reading correctly by
@@ -129,8 +146,16 @@ STATUS_MOVING_ROUTES: Final = frozenset(
 #
 # Stated as a subtraction from the set above rather than as its own literal, so a route added to
 # one is added to both and the exceptions stay exactly the three entries named here.
+#
+# ADR-0026 adds the fourth, and it is the only one that is narrow by CONSTRUCTION rather than by
+# derivation. The other three compute an outcome the caller cannot pick; this one cannot compute
+# anything -- `status="pending"` is a literal in the constructor and the route has no other write,
+# so the set of statuses reachable through it has one member and that member is the one every
+# record starts at. A human approves it afterwards, through the ordinary decision routes, which is
+# the property ADR-0026 decision 5 rests on.
 CALLER_CHOSEN_STATUS_ROUTES: Final = STATUS_MOVING_ROUTES - {
     ("POST", "/api/deploy-changes"),
     ("POST", "/api/items/{item_id}/deploy-retirement"),
     ("POST", "/api/items/{item_id}/deploy-observation"),
+    ("POST", "/api/work-changes"),
 }
