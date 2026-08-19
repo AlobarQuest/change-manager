@@ -104,8 +104,8 @@ def test_no_narrow_scope_can_choose_a_change_records_status(scope: str) -> None:
 
 
 @pytest.mark.parametrize("scope", NARROW_SCOPES)
-def test_the_only_status_a_narrow_scope_can_move_is_the_one_policy_decides(scope: str) -> None:
-    """The exception is NAMED and exactly two entries wide, so it cannot silently grow.
+def test_the_status_moving_routes_a_narrow_scope_reaches_are_named_and_bounded(scope: str) -> None:
+    """The exception is NAMED and exactly enumerated, so it cannot silently grow.
 
     ADR-0019 increment 5a: `propose` reaches the proposal ingress, and that ingress runs the
     deploy policy — so it CAN cause an approval. The guard above is keyed on the narrower
@@ -122,12 +122,19 @@ def test_the_only_status_a_narrow_scope_can_move_is_the_one_policy_decides(scope
     rather than on anything the caller said. `read` still reaches none, which is the control —
     without it this test would pass on a table that had quietly given every narrow scope a
     status-moving route.
+
+    ADR-0026 gives `propose` a third, and it broke this test's old NAME rather than its property:
+    the work-proposal ingress moves no status a policy decides, because no policy governs it. It
+    writes a `pending` record, and `pending` is where every record already starts. The name is a
+    behavioural claim, which this module records having learnt twice, so it moved with the
+    behaviour.
     """
     reached = SCOPE_ROUTES[scope] & STATUS_MOVING_ROUTES
     expected = {
         PROPOSE: {
             ("POST", "/api/deploy-changes"),
             ("POST", "/api/items/{item_id}/deploy-retirement"),
+            ("POST", "/api/work-changes"),
         },
         OBSERVE: {("POST", "/api/items/{item_id}/deploy-observation")},
     }.get(scope, set())
@@ -226,6 +233,10 @@ def test_no_narrow_scope_reaches_any_write_except_the_three_they_exist_for() -> 
         ("POST", "/api/deploy-changes"),
         ("POST", "/api/items/{item_id}/deploy-observation"),
         ("POST", "/api/items/{item_id}/deploy-retirement"),
+        # ADR-0026. The work-proposal ingress, reachable by `propose`. It is the same act as the
+        # deploy proposal and strictly weaker: that one runs the policy and can write `approved`,
+        # this one can reach `pending` and nothing else.
+        ("POST", "/api/work-changes"),
     }
 
 
@@ -411,7 +422,7 @@ def test_no_narrow_scope_can_reach_the_deploy_policy_with_a_write(client, scoped
         assert client.post("/api/deploy-policy", headers=_bearer(token)).status_code in (403, 405)
 
 
-def test_the_caller_chosen_exception_is_exactly_the_three_fact_shaped_routes() -> None:
+def test_the_caller_chosen_exception_is_exactly_the_four_routes_that_cannot_pick_a_status() -> None:
     """`CALLER_CHOSEN_STATUS_ROUTES` states a judgment, so it needs its own cross-check.
 
     A mutation caught this: emptying it left every scope test green, because an empty set
@@ -422,17 +433,24 @@ def test_the_caller_chosen_exception_is_exactly_the_three_fact_shaped_routes() -
 
     ADR-0019 increment 5b widened it from one route to two and ADR-0022 to three, and the test's
     NAME moved each time — this module's own recorded lesson is that a name is a behavioural claim.
-    Every member takes a FACT and lets the server decide what follows; a member that took a status
-    would break the property rather than extend the list.
+    The first three each take a FACT and let the server decide what follows; a member that took a
+    status would break the property rather than extend the list.
+
+    ADR-0026's work-proposal ingress is the fourth, and it is narrow for a DIFFERENT reason, which
+    is why the name no longer says "fact-shaped". The other three compute an outcome the caller
+    cannot pick. This one computes nothing: `status="pending"` is a literal in the constructor and
+    the route has no other write, so the set of statuses reachable through it has one member. Both
+    routes are unable to let a caller choose; only one of them is deciding anything.
     """
     exception = STATUS_MOVING_ROUTES - CALLER_CHOSEN_STATUS_ROUTES
     assert exception == {
         ("POST", "/api/deploy-changes"),
         ("POST", "/api/items/{item_id}/deploy-retirement"),
         ("POST", "/api/items/{item_id}/deploy-observation"),
-    }, f"the exception is no longer exactly the three fact-shaped routes: {sorted(exception)}"
+        ("POST", "/api/work-changes"),
+    }, f"the exception is no longer exactly the four routes it names: {sorted(exception)}"
     assert CALLER_CHOSEN_STATUS_ROUTES < STATUS_MOVING_ROUTES
-    assert len(CALLER_CHOSEN_STATUS_ROUTES) == len(STATUS_MOVING_ROUTES) - 3
+    assert len(CALLER_CHOSEN_STATUS_ROUTES) == len(STATUS_MOVING_ROUTES) - 4
 
 
 def test_the_propose_credential_reaches_the_retirement_it_exists_for(

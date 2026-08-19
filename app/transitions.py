@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.events import record_event
 from app.models import ChangeItem
-from app.sources import PROPOSED_SOURCES
+from app.sources import POLICY_APPROVED_SOURCES
 
 
 class TransitionError(Exception):
@@ -31,8 +31,16 @@ def decide(
     Only the grant is refused. The vetoes reach this function with a different
     `new_status` and are untouched, which is the asymmetry Devon asked for: policy grants,
     a human revokes.
+
+    KEYED ON `POLICY_APPROVED_SOURCES`, NOT ON `PROPOSED_SOURCES`, AND THE DIFFERENCE IS THE
+    WHOLE OF ADR-0026'S CARRY. This refusal says "a pinned policy decides this, so there is no
+    approval for a caller to perform" -- which is true of a deploying merge and false of a work
+    proposal, whose entire point is that a human approves it here. Keyed on the wider set, a
+    work record could be proposed and could never be approved by anybody, and the failure would
+    read as a deliberate guard rather than as the accident it is. `app/sources.py` carries the
+    three-property argument.
     """
-    if new_status == "approved" and item.source in PROPOSED_SOURCES:
+    if new_status == "approved" and item.source in POLICY_APPROVED_SOURCES:
         raise TransitionError(
             f"'{item.source}' changes are approved by policy conformance, not by a caller "
             f"(item {item.id})"
