@@ -433,3 +433,62 @@ def test_package_subject_is_none_for_every_other_source(
         "AlobarQuest/intent-packages",
     )
     assert work_item.merge_subject is None
+
+
+# --------------------------------------------------------------------------------------
+# THE RENDERED SURFACE
+# --------------------------------------------------------------------------------------
+#
+# Every test above drives the API. None rendered the page, and the page was where the
+# defect was: both templates asked `has_authorized_executor` — "will a change-window lane
+# carry this out?" — when the question they meant was "is a human's Approve what moves it?"
+# Those coincided while `deploy` was the only proposed source. A work proposal answers
+# `False` to the first and `True` to the second, so the templates offered Resolve and
+# Won't-fix on a record whose entire purpose was to be approved, and on 2026-08-19 Devon
+# retired item 59 with the only forward-looking button the page rendered.
+#
+# A mutation set could not have caught it: the assertions never reached the template.
+
+
+def _dev_login():
+    import app.web_auth as web_auth
+
+    web_auth.settings.dev_user = "devon@example.com"
+
+
+def test_the_detail_page_offers_approve_for_a_work_proposal(
+    client: TestClient, m2m: dict[str, str]
+) -> None:
+    """The control the lane needs is rendered, and the terminal-only ones are not alone."""
+    _dev_login()
+    item_id = _propose(client, m2m).json()["id"]
+    html = client.get(f"/items/{item_id}").text
+    assert f'action="/items/{item_id}/approve"' in html
+    assert f'action="/items/{item_id}/defer"' in html
+
+
+def test_the_dashboard_row_offers_approve_for_a_work_proposal(
+    client: TestClient, m2m: dict[str, str]
+) -> None:
+    _dev_login()
+    item_id = _propose(client, m2m).json()["id"]
+    html = client.get("/?status=pending&source=work").text
+    assert f'hx-post="/items/{item_id}/approve"' in html
+
+
+def test_a_deploy_change_still_renders_no_approve_control(
+    db, client: TestClient, deploy_payload
+) -> None:
+    """The discriminating control. Policy-approved records must keep hiding Approve.
+
+    Without this the fix reads as "show Approve everywhere", which is the over-general
+    version and would put a button on screen that the server answers 409 to.
+    """
+    from app.deploy_changes import propose_deploy_change
+    from app.schemas import DeployChangeIn
+
+    _dev_login()
+    item, _ = propose_deploy_change(db, DeployChangeIn(**deploy_payload()))
+    html = client.get(f"/items/{item.id}").text
+    assert f'action="/items/{item.id}/approve"' not in html
+    assert f'action="/items/{item.id}/resolve"' in html
