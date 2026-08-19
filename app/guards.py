@@ -11,7 +11,7 @@ A hidden button is not a closed door. This repository has written that down twic
 from fastapi import HTTPException
 
 from app.models import ChangeItem
-from app.sources import PROPOSED_SOURCES
+from app.sources import POLICY_APPROVED_SOURCES
 
 
 def require_executor(it: ChangeItem) -> None:
@@ -52,8 +52,13 @@ def require_policy_approver(it: ChangeItem) -> None:
 
     This is the readable refusal; the guarantee is in `transitions.decide`, on the write,
     where every caller reaches it whether or not it remembered to.
+
+    It is keyed on `POLICY_APPROVED_SOURCES`, so it covers the deploy pipeline and not every
+    proposed one. A work proposal (ADR-0026) is approved by a human, in this service, and this
+    door has to let that through -- see `app/sources.py`. The EXECUTION doors are unchanged and
+    still refuse both, on `PROPOSED_SOURCES`, in `require_executor` above.
     """
-    if it.source in PROPOSED_SOURCES:
+    if it.source in POLICY_APPROVED_SOURCES:
         raise HTTPException(
             status_code=409,
             detail=(
