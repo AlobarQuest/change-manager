@@ -13,7 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
-from app.sources import PROPOSED_SOURCES, WORK_SOURCE
+from app.sources import POLICY_APPROVED_SOURCES, PROPOSED_SOURCES, WORK_SOURCE
 
 
 class ChangeItem(Base):
@@ -128,6 +128,26 @@ class ChangeItem(Base):
         (approve / defer / wontfix / resolve / reactivate) is unaffected.
         """
         return self.source not in PROPOSED_SOURCES
+
+    @property
+    def human_may_approve(self) -> bool:
+        """Whether a human's Approve click is what moves this record forward.
+
+        **NOT the complement of `has_authorized_executor`, though both templates rendered
+        it as one, and that hid the only control a work proposal needs.** The two coincided
+        while `deploy` was the sole proposed source: a deploying merge has no change-window
+        executor AND is approved by policy, so "no executor" was a usable stand-in for "no
+        human approval". A work proposal (ADR-0026) breaks the coincidence — it has no
+        change-window executor either, and a human's approval is exactly what it waits for,
+        which is why `POLICY_APPROVED_SOURCES` was split out of `PROPOSED_SOURCES`.
+
+        The templates asked the executor question and got the wrong answer: on 2026-08-19
+        Devon was offered only Resolve and Won't-fix on a record whose entire purpose was to
+        be approved, and item 59 was retired by the only forward-looking button on the page.
+        `transitions.decide` refuses approval for `POLICY_APPROVED_SOURCES` and nothing else,
+        so this predicate mirrors the server rather than approximating it.
+        """
+        return self.source not in POLICY_APPROVED_SOURCES
 
     @property
     def merge_subject(self) -> tuple[str, int] | None:
