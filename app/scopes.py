@@ -74,6 +74,13 @@ SCOPE_ROUTES: Final[dict[str, frozenset[tuple[str, str]]]] = {
         # a general `resolve` -- which stays the full credential's -- because this route takes a
         # fact and not a status, works on deploy records only, and can reach exactly one outcome.
         ("POST", "/api/items/{item_id}/deploy-retirement"),
+        # ADR-0029. The work source's success direction. It is here for the same three reasons
+        # the deploying-merge retirement is -- a fact rather than a status, one source only, one
+        # reachable outcome -- and it is here rather than in a scope of its own because a fourth
+        # scope would be a credential nobody holds until somebody mints it, while the property
+        # that matters is asserted per MODULE: each program allowlists the paths it may reach, so
+        # holding this scope is not the same as being able to use all of it.
+        ("POST", "/api/items/{item_id}/work-retirement"),
     },
     OBSERVE: _READ_ROUTES | {("POST", "/api/items/{item_id}/deploy-observation")},
 }
@@ -105,6 +112,8 @@ STATUS_MOVING_ROUTES: Final = frozenset(
         # though the caller never names that status -- this set is about what MOVES, and the set
         # below is about what a caller may CHOOSE.
         ("POST", "/api/items/{item_id}/deploy-retirement"),
+        # ADR-0029. The work source's retirement, and it moves a status for the same reason.
+        ("POST", "/api/items/{item_id}/work-retirement"),
         # ADR-0026. The work-proposal ingress. It is here on the CONSERVATIVE reading, and the
         # conservative reading is the one this file's own history argues for: today the route
         # writes a `pending` record and a repeat is a pure no-op, so an exclusion claiming "it
@@ -153,9 +162,16 @@ STATUS_MOVING_ROUTES: Final = frozenset(
 # so the set of statuses reachable through it has one member and that member is the one every
 # record starts at. A human approves it afterwards, through the ordinary decision routes, which is
 # the property ADR-0026 decision 5 rests on.
+#
+# ADR-0029 adds the fifth, and it is the second copy of the retirement shape rather than a new
+# one: an observation in, a status the server picks, one reachable outcome that only ever removes
+# permission. What is new is that the work source's SUCCESS direction is retirement-shaped, where
+# the deploy source's is a settlement -- because a settlement needs the deciding server to derive
+# the fact, and this one has no orchestrator egress and cannot.
 CALLER_CHOSEN_STATUS_ROUTES: Final = STATUS_MOVING_ROUTES - {
     ("POST", "/api/deploy-changes"),
     ("POST", "/api/items/{item_id}/deploy-retirement"),
     ("POST", "/api/items/{item_id}/deploy-observation"),
     ("POST", "/api/work-changes"),
+    ("POST", "/api/items/{item_id}/work-retirement"),
 }

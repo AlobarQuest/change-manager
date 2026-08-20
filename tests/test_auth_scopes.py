@@ -128,6 +128,12 @@ def test_the_status_moving_routes_a_narrow_scope_reaches_are_named_and_bounded(s
     writes a `pending` record, and `pending` is where every record already starts. The name is a
     behavioural claim, which this module records having learnt twice, so it moved with the
     behaviour.
+
+    ADR-0029 gives `propose` a fourth, and it is the first REPEAT of a shape rather than a new
+    one: the work source's retirement is the deploying-merge retirement one source over. What is
+    worth noticing is that it closes the SUCCESS direction, which for the deploy source is a
+    settlement needing no route at all -- the shapes diverge because a settlement requires the
+    deciding server to derive the fact, and this one has no orchestrator egress.
     """
     reached = SCOPE_ROUTES[scope] & STATUS_MOVING_ROUTES
     expected = {
@@ -135,6 +141,7 @@ def test_the_status_moving_routes_a_narrow_scope_reaches_are_named_and_bounded(s
             ("POST", "/api/deploy-changes"),
             ("POST", "/api/items/{item_id}/deploy-retirement"),
             ("POST", "/api/work-changes"),
+            ("POST", "/api/items/{item_id}/work-retirement"),
         },
         OBSERVE: {("POST", "/api/items/{item_id}/deploy-observation")},
     }.get(scope, set())
@@ -214,7 +221,7 @@ def test_a_route_no_scope_lists_is_reachable_only_by_the_full_credential() -> No
             assert (method, template) not in SCOPE_ROUTES[scope]
 
 
-def test_no_narrow_scope_reaches_any_write_except_the_three_they_exist_for() -> None:
+def test_no_narrow_scope_reaches_any_write_except_the_four_they_exist_for() -> None:
     """Derived from the live table, so it cannot pass vacuously and cannot go stale.
 
     `test_no_narrow_scope_can_move_a_change_records_status` above is keyed on a LITERAL set, which
@@ -237,6 +244,9 @@ def test_no_narrow_scope_reaches_any_write_except_the_three_they_exist_for() -> 
         # deploy proposal and strictly weaker: that one runs the policy and can write `approved`,
         # this one can reach `pending` and nothing else.
         ("POST", "/api/work-changes"),
+        # ADR-0029. The work source's retirement, reachable by `propose` for the same three
+        # reasons the deploying-merge one is.
+        ("POST", "/api/items/{item_id}/work-retirement"),
     }
 
 
@@ -422,7 +432,7 @@ def test_no_narrow_scope_can_reach_the_deploy_policy_with_a_write(client, scoped
         assert client.post("/api/deploy-policy", headers=_bearer(token)).status_code in (403, 405)
 
 
-def test_the_caller_chosen_exception_is_exactly_the_four_routes_that_cannot_pick_a_status() -> None:
+def test_the_caller_chosen_exception_is_exactly_the_five_routes_that_cannot_pick_a_status() -> None:
     """`CALLER_CHOSEN_STATUS_ROUTES` states a judgment, so it needs its own cross-check.
 
     A mutation caught this: emptying it left every scope test green, because an empty set
@@ -441,6 +451,9 @@ def test_the_caller_chosen_exception_is_exactly_the_four_routes_that_cannot_pick
     cannot pick. This one computes nothing: `status="pending"` is a literal in the constructor and
     the route has no other write, so the set of statuses reachable through it has one member. Both
     routes are unable to let a caller choose; only one of them is deciding anything.
+
+    ADR-0029's work retirement is the fifth and returns to the fact-shaped kind: an observation in,
+    `resolved` out, and no field by which a caller could ask for anything else.
     """
     exception = STATUS_MOVING_ROUTES - CALLER_CHOSEN_STATUS_ROUTES
     assert exception == {
@@ -448,12 +461,13 @@ def test_the_caller_chosen_exception_is_exactly_the_four_routes_that_cannot_pick
         ("POST", "/api/items/{item_id}/deploy-retirement"),
         ("POST", "/api/items/{item_id}/deploy-observation"),
         ("POST", "/api/work-changes"),
-    }, f"the exception is no longer exactly the four routes it names: {sorted(exception)}"
+        ("POST", "/api/items/{item_id}/work-retirement"),
+    }, f"the exception is no longer exactly the five routes it names: {sorted(exception)}"
     assert CALLER_CHOSEN_STATUS_ROUTES < STATUS_MOVING_ROUTES
-    assert len(CALLER_CHOSEN_STATUS_ROUTES) == len(STATUS_MOVING_ROUTES) - 4
+    assert len(CALLER_CHOSEN_STATUS_ROUTES) == len(STATUS_MOVING_ROUTES) - 5
 
 
-def test_the_propose_credential_reaches_the_retirement_it_exists_for(
+def test_the_propose_credential_reaches_the_deploy_retirement_it_exists_for(
     client: TestClient, scoped: None, deploy_payload, db
 ) -> None:
     """ADR-0019 increment 5b. Not merely 'not 403' -- the record actually moves.
@@ -479,7 +493,7 @@ def test_the_propose_credential_reaches_the_retirement_it_exists_for(
 
 
 @pytest.mark.parametrize("scope", ["read", "observe"])
-def test_the_other_narrow_credentials_cannot_retire(
+def test_the_other_narrow_credentials_cannot_retire_a_deploying_merge(
     client: TestClient, scoped: None, scope: str
 ) -> None:
     """The control. Without it the test above proves only that SOME credential works."""
@@ -488,6 +502,62 @@ def test_the_other_narrow_credentials_cannot_retire(
         json={
             "observation": "pull_request_closed_unmerged",
             "pull_request_number": 42,
+            "actor": "x",
+        },
+        headers=_bearer(TOKENS[scope]),
+    )
+    assert response.status_code == 403
+
+
+def test_the_propose_credential_reaches_the_work_retirement_it_exists_for(
+    client: TestClient, scoped: None, db
+) -> None:
+    """ADR-0029. Not merely 'not 403' -- the record actually moves.
+
+    The record must be APPROVED first, because that is the only state the work lane's producer
+    ever sees one in, and a retirement from `pending` would be retiring work nobody asked for.
+    Approval is the full credential's, deliberately: this test uses it to build the subject and
+    the narrow credential to act on it, which is the split the whole file exists to assert.
+    """
+    proposal = {
+        "package_id": "infraops-mcp-server-npm-eslint",
+        "package_revision": 1,
+        "package_source_repository": "AlobarQuest/intent-packages",
+        "risk": "caution",
+        "reasoning": "the bump a human approved",
+        "actor": "test",
+    }
+    item = client.post("/api/work-changes", json=proposal, headers=_bearer(FULL_TOKEN)).json()
+    client.post(
+        f"/api/items/{item['id']}/approve",
+        json={"actor": "devon"},
+        headers=_bearer(FULL_TOKEN),
+    )
+    response = client.post(
+        f"/api/items/{item['id']}/work-retirement",
+        json={
+            "observation": "work_unit_completed",
+            "package_id": item["package_id"],
+            "package_revision": item["package_revision"],
+            "actor": "work-watcher",
+        },
+        headers=_bearer(TOKENS["propose"]),
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "resolved"
+
+
+@pytest.mark.parametrize("scope", ["read", "observe"])
+def test_the_other_narrow_credentials_cannot_retire_work(
+    client: TestClient, scoped: None, scope: str
+) -> None:
+    """The control. Without it the test above proves only that SOME credential works."""
+    response = client.post(
+        "/api/items/1/work-retirement",
+        json={
+            "observation": "work_unit_completed",
+            "package_id": "whatever",
+            "package_revision": 1,
             "actor": "x",
         },
         headers=_bearer(TOKENS[scope]),
@@ -557,8 +627,9 @@ def _confirmed_rollout(pull_request_number: int) -> dict:
 def test_the_propose_credential_still_cannot_resolve_anything_else(
     client: TestClient, scoped: None
 ) -> None:
-    """Retirement is narrower than `resolve` on purpose: deploy records only, one outcome, and
-    a fact rather than a status. The general verb stays where it was."""
+    """Retirement is narrower than `resolve` on purpose: ONE source each, one outcome each, and
+    a fact rather than a status. ADR-0029 adds a second retirement and does not widen this: two
+    routes that each retire one source are not the general verb, which reaches every pipeline."""
     response = client.post(
         "/api/items/1/resolve", json={"actor": "producer"}, headers=_bearer(TOKENS["propose"])
     )

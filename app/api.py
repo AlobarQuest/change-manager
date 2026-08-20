@@ -36,6 +36,7 @@ from app.schemas import (
     SyncRequest,
     SyncSummary,
     WorkChangeIn,
+    WorkRetirementIn,
 )
 from app.sources import POLICY_APPROVED_SOURCES, PROPOSED_SOURCES, ProposedSourceError
 from app.transitions import TransitionError
@@ -47,6 +48,7 @@ from app.work_changes import (
     WorkChangeIdentityHeld,
     propose_work_change,
 )
+from app.work_retirement import WorkRetirementRefused, retire_work_change
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_m2m)])
 
@@ -193,6 +195,36 @@ def retire_deploy(item_id: int, body: DeployRetirementIn, db: Session = Depends(
             actor=body.actor,
         )
     except RetirementRefused as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return _item_dict(item)
+
+
+@router.post("/items/{item_id}/work-retirement")
+def retire_work(item_id: int, body: WorkRetirementIn, db: Session = Depends(get_db)) -> dict:
+    """Retire a work record whose work the software delivery system has built (ADR-0029).
+
+    THE CALLER SUPPLIES A FACT, NOT A STATUS -- the same property that makes the deploying-merge
+    retirement reachable by the narrow `propose` credential. It is safe on a fact this service
+    cannot check because the route can only ever REMOVE permission, never grant it, and this
+    service cannot check it at all: it has no orchestrator egress and never will.
+    `app/work_retirement.py` carries the argument.
+
+    Idempotent: a record already terminal answers 200 unchanged, because the producer sweeps on
+    every pass and a retirement it already made must not become a finding.
+    """
+    item = db.get(ChangeItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="item not found")
+    try:
+        retire_work_change(
+            db,
+            item,
+            observation=body.observation,
+            package_id=body.package_id,
+            package_revision=body.package_revision,
+            actor=body.actor,
+        )
+    except WorkRetirementRefused as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     return _item_dict(item)
 
