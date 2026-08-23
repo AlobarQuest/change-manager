@@ -6,13 +6,25 @@
    &middot; <strong>Risk:</strong> {{ it.risk }} &middot; <strong>Kind:</strong> {{ it.kind }}</p>
 <p><strong>Why:</strong> {{ it.reasoning }}</p>
 {% if it.note %}<p><strong>Auto-fix held:</strong> {{ it.note }}</p>{% endif %}
-{% if it.status == "blocked" or (not it.has_authorized_executor and it.status in ["pending", "deferred", "approved"]) %}
+{% if it.human_may_approve and it.status in ["pending", "deferred"] %}
+{# The record is waiting on a human's decision, and Approve is the one that moves it
+   forward. A work proposal (ADR-0026) lives here: no change-window executor will ever
+   claim it, and it is nonetheless approved by a person. This block used to ask
+   `has_authorized_executor`, which is a different question, and so offered only the two
+   terminal actions — on 2026-08-19 that retired a work proposal by the only
+   forward-looking button the page rendered. #}
+<p>
+  <form method="post" action="/items/{{ it.id }}/approve" style="display:inline"><button type="submit">Approve</button></form>
+  <form method="post" action="/items/{{ it.id }}/defer" style="display:inline"><button type="submit">Defer</button></form>
+  <form method="post" action="/items/{{ it.id }}/wontfix" style="display:inline"><button type="submit">Won't-fix</button></form>
+</p>
+{% elif it.status == "blocked" or (not it.human_may_approve and it.status in ["pending", "deferred", "approved"]) %}
 {# Human-terminal actions so a blocked item is never a dead-end. NOT approve —
    that would re-queue the executor that already blocked it. The same applies to a
-   change no executor will ever claim, and since ADR-0019 increment 5 that record
-   spends most of its life PENDING rather than approved: policy grants approval, so a
-   record awaiting ratification — or one whose criteria moved out from under it — must
-   still be closable by the human who is the only one who can retire it. #}
+   policy-approved change, which since ADR-0019 increment 5 spends most of its life
+   PENDING rather than approved: policy grants approval, so a record awaiting
+   ratification — or one whose criteria moved out from under it — must still be closable
+   by the human who is the only one who can retire it. #}
 <p>
   <form method="post" action="/items/{{ it.id }}/resolve" style="display:inline"><button type="submit">Resolve</button></form>
   <form method="post" action="/items/{{ it.id }}/wontfix" style="display:inline"><button type="submit">Won't-fix</button></form>

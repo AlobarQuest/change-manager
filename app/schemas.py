@@ -226,6 +226,34 @@ class DeployRetirementIn(BaseModel):
         return _required_text(v, info.field_name)
 
 
+class WorkRetirementIn(BaseModel):
+    """An observed fact about a work record's subject (ADR-0029).
+
+    The same absence as `DeployRetirementIn`, and for the same reason: there is NO status field,
+    so the caller reports what it saw and the server decides what follows. That is what makes
+    this reachable by the narrow `propose` credential when every other status-moving verb is the
+    full credential's alone.
+
+    The package revision is repeated from the record rather than taken on trust from the path, so
+    the server can refuse a mismatch instead of retiring whichever record the id happened to
+    select. `package_revision` is strict and bounded by int4 for `WorkChangeIn`'s reason: pydantic's
+    lax mode reads `true` as 1, which would let a malformed caller match revision 1 of a package
+    and retire a record it never observed.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    observation: str
+    package_id: str
+    package_revision: int = Field(gt=0, le=2_147_483_647, strict=True)
+    actor: str
+
+    @field_validator("observation", "package_id", "actor")
+    @classmethod
+    def _not_blank(cls, v: str, info) -> str:
+        return _required_text(v, info.field_name)
+
+
 # A git object name as GitHub serves it. Anchored and lower-case: `fullmatch` on a case-folded
 # value, so `ABC…`/`abc…` cannot become two spellings of one commit in the frozen-merge guard.
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}")
