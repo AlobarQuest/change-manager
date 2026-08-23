@@ -11,12 +11,18 @@
   <td><span class="badge">{{ it.risk }}</span></td>
   <td><span class="badge">{{ it.status }}</span></td>
   <td>
-    {% if it.status in ["pending", "deferred"] and not it.has_authorized_executor %}
-      {# A proposed change is approved by conformance to a pinned policy and by nobody's
-         click (ADR-0019 increment 5), so Approve is not offered — the server refuses it,
-         and an affordance that always 409s is worse than none. The vetoes stay: without
-         a terminal action a record nothing will ever claim parks where no control reaches
-         it, which is the concern this template already carried one status further down. #}
+    {% if it.status in ["pending", "deferred"] and not it.human_may_approve %}
+      {# A POLICY-APPROVED change is approved by conformance to a pinned policy and by
+         nobody's click (ADR-0019 increment 5), so Approve is not offered — the server
+         refuses it, and an affordance that always 409s is worse than none. The vetoes stay:
+         without a terminal action a record nothing will ever claim parks where no control
+         reaches it, which is the concern this template already carried one status further
+         down.
+         ASK `human_may_approve`, NOT `has_authorized_executor`. Those coincided while
+         `deploy` was the only proposed source and came apart when work proposals arrived:
+         a work proposal has no change-window executor either, and a human's approval is
+         precisely what it waits for. Asking the executor question here hid the only control
+         that record needs, and retired one by the only forward-looking button on the page. #}
       <button hx-post="/items/{{ it.id }}/resolve" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Resolve</button>
       <button hx-post="/items/{{ it.id }}/wontfix" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Won't-fix</button>
     {% elif it.status in ["pending", "deferred"] %}
