@@ -809,10 +809,14 @@ _A_CLASS_NO_VERSION_ADMITS = "software-delivery"
 def factory_conformant(**overrides) -> dict:
     """A factory record as `change_proposer` derives one: change-manager's terms, its own class.
 
-    The producer builds one proposal shape and varies a single field -- `change_class` is
-    `BOT_CHANGE_CLASS` when a pull request has no work-unit id in its title and
-    `FACTORY_CHANGE_CLASS` when it has one. So a factory record differs from a bot's in that one
-    field and in nothing else, and this fixture is built the same way for the same reason.
+    `change_class` is the field POLICY reads: the producer writes `BOT_CHANGE_CLASS` when a pull
+    request has no work-unit id in its title and `FACTORY_CHANGE_CLASS` when it has one, and this
+    fixture varies exactly that.
+
+    It is NOT the only field that differs, and saying so would be wrong: `_reasoning` also appends
+    a sentence naming the work unit. That field is not a policy term, so conformance is unaffected
+    -- but a real factory payload and a bot's are not interchangeable, and a fixture claiming they
+    were would invite a later reader to test one believing it had tested both.
     """
     defaults = {"change_class": FACTORY_CLASS, "pull_request_number": 81}
     return conformant(**{**defaults, **overrides})
@@ -981,19 +985,36 @@ def test_a_record_approved_under_version_three_still_means_what_it_meant():
     assert v3.change_classes == frozenset({BOT_CLASS})
     assert FACTORY_CLASS not in v3.change_classes
     assert v3.repositories == {BRAIN, CHANGE_MANAGER}
-    assert v3.acceptance_criteria[BRAIN] == current().acceptance_criteria[BRAIN]
+
+    # A LITERAL, because V3 and V4 share the `_V3_BRAIN_CRITERIA` OBJECT -- so comparing
+    # `v3.acceptance_criteria[BRAIN]` against `current()`'s compares a reference with itself and
+    # passes even when that constant has been edited in place, which is the exact failure this
+    # test's docstring names. Only a literal can see it.
+    assert v3.acceptance_criteria[BRAIN] == (
+        "the rollout runs for this merge on alobarquest/brain, and its production step "
+        "concludes success (job 'deploy', step 'Deploy brain apps')",
+        "every brain application this rollout triggered answered /api/health reporting the "
+        "merged commit as its revision and a status of ok, within 600 seconds; an application "
+        "whose Coolify UUID secret is unset is neither triggered nor checked, and a rollout "
+        "that triggered none fails rather than passing empty",
+    )
 
 
 def test_version_four_does_not_widen_what_may_land(client, m2m):
     """A class grant is not a landing grant. ADR-0025's second boundary: policy approval means
     NO OBJECTION, never GO AHEAD, and every condition on the act is unchanged.
 
-    The consequence for this lane is worth pinning rather than leaving to be rediscovered: an
-    update type is read from a title stating a single version delta, a factory title states none,
-    and so the lane these conditions govern can never land a factory pull request -- the same
-    answer a requirement-range bump already gets, by the same route. A factory pull request is
-    landed by the lane that adjudicated the work behind it, which asks this service only whether
-    the change was routed and approved.
+    WHAT THIS TEST DOES NOT ESTABLISH, stated because an earlier version of it claimed to. It is
+    tempting to read "the update types are unchanged" as "so a factory pull request can never be
+    landed by that lane". That inference is FALSE and was measured to be: the pattern reading a
+    version delta out of a title is only END-anchored, so `SDS <unit>: Bump ruff from 0.15.20 to
+    0.16.2` parses as `semver-patch` while `SDS <unit>: Reformat embedded code blocks` does not.
+    A unit title is free text a human writes, so the separation would rest on wording.
+
+    That lane selects subjects on approved status alone and asks nothing about the change class,
+    so this version makes factory records visible to it for the first time. The refusal belongs
+    there, keyed on the class this version names -- it is not a term this policy can express, and
+    asserting it here would be this file vouching for a guarantee another repository owes.
     """
     landing = client.get("/api/deploy-policy", headers=m2m).json()
 
