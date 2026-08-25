@@ -402,11 +402,149 @@ V3: Final = DeployPolicy(
     landing=_V3_LANDING,
 )
 
+# ---------------------------------------------------------------------------
+# Version 4 -- Devon, 2026-08-25. Versions 1, 2 and 3 above are retained verbatim.
+# ---------------------------------------------------------------------------
+#
+# ADMITS A SECOND CHANGE CLASS AND CHANGES NOTHING ELSE. `factory-delivery` is the class the
+# orchestrator's producer writes on a record for a pull request the FACTORY opened, as distinct
+# from an update bot's. ADR-0025, decided 2026-08-17: *"A change record for a factory-opened pull
+# request is approved by conformance to that policy, as a Dependabot record already is. There is
+# no per-record human approval."* Every repository, criterion, remedy, pin and landing condition
+# is the same object version 3 declared, so this is additive for `dependency-update` -- and a
+# record approved under version 3 is nevertheless refused at the landing until it is re-approved,
+# because the landing binds an approval to the CURRENT version. That is version 2's
+# narrowing-at-the-act mechanism, unchanged, and the producer's next pass re-stamps every record
+# that still conforms.
+#
+# WHY A CLASS GRANT IS THE RIGHT SHAPE FOR THIS, which is the part a later reader will want.
+# A per-record human approval was considered and rejected, and the decisive argument is structural
+# rather than a matter of taste: THIS SERVICE HAS NO GITHUB EGRESS. A record approval therefore
+# *cannot* show a human what changed -- not "does not today", but cannot, which is the same
+# property the module docstring above gives for leaving every change-specific term to the landing
+# party. What the form could show was measured on the three records that landed (items 51, 52 and
+# 53, three different bumps): the acceptance criteria and the rollback plan are byte-identical
+# across all three, so its only moving field is a pull request number. An approval on those terms
+# is not a review of the change; it is a re-ratification of the repository's deployment terms,
+# which a human ratified once when this file was written. A control that is structurally
+# uninformative gets clicked through, the same way a permanently-red signal stops being read.
+#
+# WHAT IS GIVEN UP, STATED PLAINLY: a person standing at the last gate. After this, nobody is
+# prompted before a machine-authored change reaches production. The replacement is the
+# human-judgment acceptance criterion on the intent package, and it is better placed rather than
+# merely different -- a package whose work warrants reading carries one, which disqualifies its
+# unit from the autonomous landing lane by construction, and a person merges it. That puts the
+# human at the moment the diff exists. ADR-0025 records the risk that comes with it: the lever
+# only works if it is used, and whether such a package must carry one is an authoring convention
+# left open there deliberately, to be decided against a real factory record.
+#
+# THE CEILING THIS GRANT INHERITS, RECORDED RATHER THAN CLOSED. `acceptance_criteria` and
+# `rollback_plans` are keyed by REPOSITORY while `change_classes` is a flat set, so
+# `factory-delivery` necessarily inherits exactly the criteria `dependency-update` has for each
+# repository. That is defensible -- both are statements about the deployment MECHANISM, equally
+# true whatever changed -- but it means there is no way to require more verification of factory
+# work than of a lockfile bump without keying criteria on `(repository, change_class)`. ADR-0025
+# was decided with that correction in hand, and restructuring the keying is a separate decision
+# with its own cost. It is not made here.
+
+# change-manager's and brain's criteria, remedies and pins are UNCHANGED from version 3, so they
+# are the same constants rather than a fourth transcription of two judgments. Only the landing
+# rationale is version 4's own, for the reason version 3 gives: a version declares its own
+# conditions rather than borrowing a superseded version's.
+_V4_LANDING: Final = LandingConditions(
+    update_types=frozenset({SEMVER_PATCH, SEMVER_MINOR}),
+    require_head_current_with_base=True,
+    rationale=(
+        "Patch and minor only, which is STRICTER than the cascade governing the repositories "
+        "where landing changes nothing already serving, for the reason version 1 gives: the "
+        "rollout job does not run on a pull request, only on a landing, so a major bump to the "
+        "workflow-automation ecosystem would be exercised for the first time during the very "
+        "rollout it is supposed to gate. That holds for both repositories this version admits -- "
+        "brain's deploy job is gated on a push to main and fires on nothing else. A requirement-"
+        "RANGE bump carries no update type at all and is refused for want of a parseable delta. "
+        "THAT IS THE INTENDED BEHAVIOUR AND NOT A PARSER DEFECT; do not 'fix' it. Freshness is a "
+        "policy condition rather than a strict branch, because a strict branch serialises human "
+        "merges too and applies estate-wide behaviour nobody versions. "
+        "VERSION 4 ADDS NO CONDITION ON THE ACT AND REMOVES NONE, and the reason is worth stating "
+        "because the version admits a class whose pull requests these terms were not written "
+        "about. Both surviving terms are functions of the REPOSITORY and of the position of a "
+        "branch, not of who authored the change, so neither becomes wrong when the author is the "
+        "factory. But NEITHER IS A TERM ABOUT WHO AUTHORED IT, and that is the gap this version "
+        "opens rather than closes. A factory pull request is meant to be landed by the lane that "
+        "adjudicated the work behind it -- which asks whether the unit completed, whether its "
+        "criteria were decided by the verifier from observed evidence, and whether an authority "
+        "approval is bound to the envelope. NONE of those is asked by the lane these conditions "
+        "govern, and that lane selects its subjects on approved status alone. So making a factory "
+        "record approvable makes it VISIBLE to a lane that would land it on a weaker basis. What "
+        "keeps such a record out today is an update type, which is read from a title stating a "
+        "single version delta; a factory title usually states none -- but the pattern is only "
+        "END-anchored, so a title ending 'from 0.15.20 to 0.16.2' parses, and a unit title is "
+        "free text a human writes. A LANE SEPARATION THAT DEPENDS ON HOW SOMEBODY HAPPENED TO "
+        "WORD A TITLE IS NOT A SEPARATION. The refusal belongs on the party that reads GitHub and "
+        "selects the subject, keyed on the change class this version names, and it is tracked as "
+        "the condition of this grant rather than assumed away here."
+    ),
+    rollout_workflows={
+        "alobarquest/change-manager": WorkflowPin(
+            path=".github/workflows/deploy.yml",
+            # `191ec5a`, 2026-08-07 -- unchanged from versions 2 and 3.
+            blob_sha="a47d4b187c93971a5b5915ce87a963bd4ef35e30",
+        ),
+        "alobarquest/brain": WorkflowPin(
+            path=".github/workflows/ci.yml",
+            # `1d9e7d38`, 2026-08-14 -- unchanged from version 3.
+            blob_sha="c5c088719cd340f0071b875c6a82439292ed8756",
+        ),
+    },
+)
+
+V4: Final = DeployPolicy(
+    version=4,
+    decided="2026-08-25",
+    rationale=(
+        "Two repositories and two change classes. What version 4 grants is that a change record "
+        "for a pull request the FACTORY opened -- change class 'factory-delivery' -- is approved "
+        "by conformance to this policy, exactly as an update bot's record already is, with no "
+        "per-record human approval. ADR-0025, decided 2026-08-17. "
+        "The grant is narrower than it sounds, because what a conformant record attests here is "
+        "unchanged: a human pinned this repository, these criteria and this remedy. It says "
+        "nothing about the change, and it could not -- this service has no GitHub egress, so a "
+        "human approving a factory record could not be shown what changed, and the acceptance "
+        "criteria and rollback plan such a form would display are byte-identical across every "
+        "record this policy has ever approved. The judgment that reads a machine-authored diff "
+        "is the human-judgment acceptance criterion on the intent package, which disqualifies "
+        "its unit from landing unattended and puts a person at the moment the diff exists. "
+        "Nothing else moves. Both repositories, both criteria pairs, both remedies, both rollout "
+        "pins and every landing condition are the objects version 3 declared. This admits a "
+        "CLASS and not a REPOSITORY: a factory record for a repository this policy does not name "
+        "is refused exactly as it was. And approval here remains the weakest thing this estate "
+        "grants -- it means no objection, never go ahead, and every condition on the act is "
+        "still evaluated by the party that can read GitHub at the moment it acts. "
+        "One ceiling is inherited rather than chosen and is recorded above the landing "
+        "conditions: criteria are keyed by repository and change classes are a flat set, so "
+        "factory work is held to the same two criteria a lockfile bump is. Both are statements "
+        "about the deployment mechanism, so both are true; requiring more of factory work would "
+        "mean keying criteria on repository and class together, which is a separate decision."
+    ),
+    repositories=frozenset({"alobarquest/change-manager", "alobarquest/brain"}),
+    change_classes=frozenset({"dependency-update", "factory-delivery"}),
+    risks=frozenset({"caution"}),
+    acceptance_criteria={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_CRITERIA,
+        "alobarquest/brain": _V3_BRAIN_CRITERIA,
+    },
+    rollback_plans={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_ROLLBACK,
+        "alobarquest/brain": _V3_BRAIN_ROLLBACK,
+    },
+    landing=_V4_LANDING,
+)
+
 # Every version ever, retained. A record stores the number that approved it, so an approval stays
 # re-evaluable after the policy has moved on.
-REGISTRY: Final[dict[int, DeployPolicy]] = {policy.version: policy for policy in (V1, V2, V3)}
+REGISTRY: Final[dict[int, DeployPolicy]] = {policy.version: policy for policy in (V1, V2, V3, V4)}
 
-CURRENT_VERSION: Final = 3
+CURRENT_VERSION: Final = 4
 
 
 def policy_for(version: int) -> DeployPolicy | None:
