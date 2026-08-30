@@ -53,6 +53,24 @@ SEMVER_PATCH: Final = "semver-patch"
 SEMVER_MINOR: Final = "semver-minor"
 SEMVER_MAJOR: Final = "semver-major"
 
+# The workflow-automation ecosystem, spelled as the update bot spells it in a BRANCH NAME, which
+# is where the landing party reads it. WITH AN UNDERSCORE, and that is not a detail.
+#
+# THE VOCABULARY IS THE BRANCH SEGMENT, NOT `package-ecosystem`, and the two disagree. A
+# `dependabot.yml` says `github-actions`; the branch says `github_actions`, because the value the
+# update bot normalises into `dependabot/<ecosystem>/<rest>` is the identifier rather than the
+# configured spelling. `npm` configures as `npm` and appears as `npm_and_yarn`. An author adding a
+# member here must read a real branch name, not a config file.
+#
+# AND A MISSPELLING HERE FAILS THE UNSAFE WAY, which is the opposite of the same mistake in the
+# other lane. There the ecosystem sits on the PERMITTING side, so the estate's landing ledger
+# records a gate revision that compared the hyphenated form, matched nothing, and permitted
+# nothing -- it under-permitted, invisibly, which is why the ledger transcribes the literal rather
+# than correcting it. Here the ecosystem sits on the EXCLUDING side: a member nothing matches
+# excludes nothing, so the landing party ADMITS exactly the ecosystem this exclusion exists for.
+# That is why the spelling is pinned by a test rather than trusted to review.
+GITHUB_ACTIONS: Final = "github_actions"
+
 
 @dataclass(frozen=True)
 class WorkflowPin:
@@ -97,6 +115,24 @@ class LandingConditions:
     require_head_current_with_base: bool
     rationale: str
     rollout_workflows: Mapping[str, WorkflowPin] = field(default_factory=dict)
+    # ADR-0036. WHICH RULE A VERSION DECIDES BY, carried as the presence of this field.
+    #
+    # MEMBERS ARE SPELLED AS A BRANCH SPELLS THEM -- the second segment of
+    # `dependabot/<ecosystem>/<rest>` -- and NOT as `dependabot.yml` spells them. See
+    # `GITHUB_ACTIONS` above for why the two differ and why getting it wrong admits rather than
+    # refuses.
+    #
+    # `None` -- every version before the fifth -- means the version decides by `update_types`.
+    # A frozenset means it decides on the OUTCOME: a bump whose required checks pass may land
+    # whatever its version delta or absence of one, EXCEPT in the ecosystems named here, which are
+    # the ones those checks do not exercise. It defaults to `None` for the same reason
+    # `rollout_workflows` defaults to empty -- so the dataclass can gain a field while every
+    # superseded version above stays readable exactly as it was decided.
+    #
+    # THIS SERVICE STILL EVALUATES NOTHING. Like every other term here, the ecosystem lives in
+    # GitHub -- it is the second segment of the branch the update bot opens -- and the landing
+    # party is the one that can read it.
+    excluded_ecosystems: frozenset[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -540,11 +576,153 @@ V4: Final = DeployPolicy(
     landing=_V4_LANDING,
 )
 
+# ---------------------------------------------------------------------------
+# Version 5 -- Devon, 2026-08-30. Versions 1 to 4 above are retained verbatim.
+# ---------------------------------------------------------------------------
+#
+# CHANGES WHAT DECIDES, AND NOTHING ELSE ABOUT THE TERMS. Both repositories, both criteria pairs,
+# both remedies, both rollout pins, both change classes and the freshness condition are the objects
+# version 4 declared. What moves is the one condition that asked about the version NUMBER: a bump
+# whose required checks pass may now land whatever delta it states or fails to state.
+#
+# It is not free, and the cost is the one every version bump carries: raising CURRENT_VERSION
+# supersedes every currently-approved record until it is re-approved, because the landing binds an
+# approval to the version in force. This is a widening, so every held record still conforms and the
+# producer re-stamps it on its next pass -- but between those two moments nothing lands.
+#
+# ADR-0036, and it is ADR-0034's rule applied to the deploying half of the estate. The reasoning is
+# there in full; the two facts that decide it are that both lanes ALREADY gate on the required
+# checks passing, so the update-type condition sat on top of that gate and said nothing about
+# whether the bump works -- and that the condition could never reach the population it was holding.
+# A requirement RANGE states no single delta, so no rule about deltas applies to it: five green
+# pull requests across these two repositories sat unlandable for want of a parseable version
+# number, while a `semver-patch` that broke at runtime would have passed.
+#
+# THE EXCLUSION IS THE SAME PRINCIPLE ADR-0034 KEPT: exclude where the required checks do not
+# exercise what changed. On these repositories the rollout job is gated on a push to the default
+# branch and runs on no pull request at all -- visible on every subject as a skipped job beside the
+# passing ones -- so a change reaching it would be exercised for the first time by the very rollout
+# it is supposed to gate. That is the workflow-automation ecosystem, which is what version 1 named
+# and what this version keeps, now stated as the thing it is rather than inferred from a delta.
+#
+# IT IS NOT THE WHOLE OF THE PROTECTION AND IS NOT MEANT TO BE. The rollout pin below compares the
+# pinned workflow's bytes at the pull request's own head, so a change to that FILE is refused
+# whatever ecosystem it came from and whoever wrote it. The exclusion reaches what the pin cannot:
+# a workflow this estate runs that no required check executes and no record pins.
+#
+# WHAT IS GIVEN UP, STATED PLAINLY. A major version bump whose tests pass but which breaks at
+# runtime in a way those tests do not cover would reach production. It is bounded by one landing
+# per repository per occurrence of the change window, by the pinned rollback plan above, and by
+# the rollout watcher that observes the result hourly -- and it is the same exposure already
+# accepted for patch and minor, at a larger blast radius.
+#
+# THIS REMOVES ONE OF TWO GUARDS KEEPING FACTORY-AUTHORED PULL REQUESTS OUT OF THE UNATTENDED
+# LANE, which version 4 named as the condition of its own grant: `update_types` is what kept them
+# out, and version 4 called that "a lane separation that depends on how somebody happened to word
+# a title is not a separation". The other guard is the landing party's own selection on change
+# class, which is unaffected -- so the door stays shut, on one belt rather than two, and on the
+# belt that was chosen as a control rather than the one that worked by accident.
+#
+# WHY `update_types` IS SERVED AS EMPTY RATHER THAN DROPPED. The two sides of this contract are
+# different processes that ship separately, so a landing party running the previous build will read
+# this version's conditions. Dropping the key makes that reader unable to parse them at all, which
+# refuses every record in both repositories rather than the ones this version is about; keeping it
+# well-typed and EMPTY keeps the shape readable and permits nothing under it -- which is the right
+# answer for a reader that cannot see this version's rule. It is a floor for a reader that has not
+# learned the outcome rule, and deliberately not a statement that version 5 permits no delta.
+_V5_LANDING: Final = LandingConditions(
+    update_types=frozenset(),
+    require_head_current_with_base=True,
+    excluded_ecosystems=frozenset({GITHUB_ACTIONS}),
+    rationale=(
+        "WHAT DECIDES IS THE OUTCOME. A pull request the update bot opened may be landed "
+        "unattended when its required checks pass, whatever version delta it states or fails to "
+        "state. Versions 1 to 4 permitted patch and minor only, which asked about the version "
+        "NUMBER and said nothing about whether the bump works -- both this lane and the cascade "
+        "governing the repositories where landing changes nothing already serving ALREADY gate on "
+        "the required checks passing, so the update-type condition sat on top of that gate. And it "
+        "could not reach the population it was holding: a requirement RANGE states no single "
+        "delta, so no rule about deltas applies to it, and five green pull requests across these "
+        "two repositories were unlandable for want of a parseable version number while a patch "
+        "that broke at runtime would have passed. ADR-0036, and ADR-0034's rule applied to the "
+        "deploying half of the estate. "
+        "THE EXCLUSION IS THE SAME PRINCIPLE ADR-0034 KEPT: exclude where the required checks do "
+        "not exercise what changed. The rollout job on both these repositories is gated on a push "
+        "to the default branch and runs on no pull request, which is visible on every subject as "
+        "a skipped job beside the passing ones -- so a change reaching it would be exercised for "
+        "the first time by the very rollout it is supposed to gate. That is the "
+        "workflow-automation ecosystem, named here as the thing it is rather than inferred from a "
+        "delta, and read by the landing party from the second segment of the branch the update "
+        "bot opened. It is not the whole of the protection: the rollout pin below compares the "
+        "pinned workflow's bytes at the pull request's own head, so a change to that FILE is "
+        "refused whatever ecosystem it came from. The exclusion reaches what the pin cannot -- a "
+        "workflow this estate runs that no required check executes and no record pins. "
+        "WHAT IS GIVEN UP: a major bump whose tests pass but which breaks at runtime in a way "
+        "those tests do not cover would reach production. It is bounded by one landing per "
+        "repository per occurrence of the change window, by the rollback plan pinned above, and "
+        "by the watcher that observes the rollout -- and it is the exposure already accepted for "
+        "patch and minor at a larger blast radius. "
+        "`update_types` is served EMPTY and that is a floor for a landing party running the "
+        "previous build, not a statement that this version permits no delta: such a reader cannot "
+        "see the rule above, and must permit nothing under a version it does not understand. "
+        "Freshness is unchanged and is a policy condition rather than a strict branch, because a "
+        "strict branch serialises human merges too and applies estate-wide behaviour nobody "
+        "versions."
+    ),
+    rollout_workflows={
+        "alobarquest/change-manager": WorkflowPin(
+            path=".github/workflows/deploy.yml",
+            # `191ec5a`, 2026-08-07 -- unchanged from versions 2, 3 and 4.
+            blob_sha="a47d4b187c93971a5b5915ce87a963bd4ef35e30",
+        ),
+        "alobarquest/brain": WorkflowPin(
+            path=".github/workflows/ci.yml",
+            # `1d9e7d38`, 2026-08-14 -- unchanged from versions 3 and 4.
+            blob_sha="c5c088719cd340f0071b875c6a82439292ed8756",
+        ),
+    },
+)
+
+V5: Final = DeployPolicy(
+    version=5,
+    decided="2026-08-30",
+    rationale=(
+        "Two repositories and two change classes, both unchanged from version 4. What version 5 "
+        "changes is the one condition on the ACT that asked about a version number: a pull request "
+        "the update bot opened may be landed unattended when its required checks pass, whatever "
+        "delta it states or fails to state, except in the ecosystems those checks do not exercise. "
+        "ADR-0036, decided 2026-08-30. "
+        "The grant is narrower than it sounds. Everything a conformant record attests here is "
+        "unchanged: a human pinned these repositories, these criteria and these remedies, and "
+        "every condition on the act is still evaluated at the moment of the act by the party that "
+        "can read GitHub. What moves is that the version delta stops being one of them, because "
+        "it never said whether the bump works and it could not classify the population it was "
+        "holding -- five green pull requests, every other condition met, refused for want of a "
+        "parseable version number. "
+        "Nothing else moves. Both repositories, both criteria pairs, both remedies, both rollout "
+        "pins, both change classes and the freshness condition are the objects version 4 declared."
+    ),
+    repositories=frozenset({"alobarquest/change-manager", "alobarquest/brain"}),
+    change_classes=frozenset({"dependency-update", "factory-delivery"}),
+    risks=frozenset({"caution"}),
+    acceptance_criteria={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_CRITERIA,
+        "alobarquest/brain": _V3_BRAIN_CRITERIA,
+    },
+    rollback_plans={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_ROLLBACK,
+        "alobarquest/brain": _V3_BRAIN_ROLLBACK,
+    },
+    landing=_V5_LANDING,
+)
+
 # Every version ever, retained. A record stores the number that approved it, so an approval stays
 # re-evaluable after the policy has moved on.
-REGISTRY: Final[dict[int, DeployPolicy]] = {policy.version: policy for policy in (V1, V2, V3, V4)}
+REGISTRY: Final[dict[int, DeployPolicy]] = {
+    policy.version: policy for policy in (V1, V2, V3, V4, V5)
+}
 
-CURRENT_VERSION: Final = 4
+CURRENT_VERSION: Final = 5
 
 
 def policy_for(version: int) -> DeployPolicy | None:
@@ -603,7 +781,7 @@ def landing_conditions_dict(policy: DeployPolicy) -> dict:
     -- the reason is on `LandingConditions`, and the two readings differ for exactly the version
     that predates the field.
     """
-    return {
+    served = {
         "update_types": sorted(policy.landing.update_types),
         "require_head_current_with_base": policy.landing.require_head_current_with_base,
         "rationale": policy.landing.rationale,
@@ -612,3 +790,10 @@ def landing_conditions_dict(policy: DeployPolicy) -> dict:
             for repository, pin in sorted(policy.landing.rollout_workflows.items())
         },
     }
+    # ADR-0036. THE KEY IS OMITTED BY A VERSION THAT DOES NOT DECIDE ON THE OUTCOME, and its
+    # presence is what tells the landing party which rule to apply. Serving it as an empty list for
+    # versions 1 to 4 would tell a reader that those versions exclude nothing -- true of the words
+    # and false of the rule, since those versions decide by update type and exclude by omission.
+    if policy.landing.excluded_ecosystems is not None:
+        served["excluded_ecosystems"] = sorted(policy.landing.excluded_ecosystems)
+    return served
