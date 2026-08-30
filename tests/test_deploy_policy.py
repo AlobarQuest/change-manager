@@ -1173,3 +1173,39 @@ def test_a_record_approved_under_version_four_is_re_approved_under_version_five(
 
     assert replay.json()["policy_version"] == 5
     assert replay.json()["policy_objections"] == []
+
+
+def test_a_version_that_decides_on_the_outcome_EXCLUDES_SOMETHING():
+    """An empty excluded set is the maximally permissive shape this schema can express, and it is
+    one dropped element away from a version that means to exclude something.
+
+    Note the asymmetry with the pin one field over, which is deliberate on both sides:
+    `rollout_workflows` treats an absent entry as a REFUSAL, because nobody saying which bytes is
+    not the same as those bytes being fine. Here an empty set is a real value the reader honours as
+    "exclude nothing" -- so the guard against authoring it by accident belongs on this side, where
+    the authoring happens, rather than on the side that must read whatever it is served.
+    """
+    for policy in REGISTRY.values():
+        excluded = policy.landing.excluded_ecosystems
+        if excluded is not None:
+            assert excluded, f"version {policy.version} decides on the outcome and excludes nothing"
+
+
+def test_a_version_cannot_declare_BOTH_rules():
+    """One document, two readers, and this is what stops them being given two answers.
+
+    A landing party that predates the outcome rule enforces `update_types`; one that has learned it
+    ignores that field entirely. A version setting both -- the outcome rule, still capped at minor
+    -- would therefore be enforced by the old reader and ignored by the new one, from the same
+    served bytes. Pinning them mutually exclusive also pins version 5's empty floor, which is
+    otherwise a convention in a comment.
+    """
+    for policy in REGISTRY.values():
+        if policy.landing.excluded_ecosystems is not None:
+            assert policy.landing.update_types == frozenset(), (
+                f"version {policy.version} decides on the outcome and also names update types"
+            )
+        else:
+            assert policy.landing.update_types, (
+                f"version {policy.version} decides by update type and names none"
+            )

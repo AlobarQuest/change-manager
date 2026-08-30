@@ -53,12 +53,22 @@ SEMVER_PATCH: Final = "semver-patch"
 SEMVER_MINOR: Final = "semver-minor"
 SEMVER_MAJOR: Final = "semver-major"
 
-# The workflow-automation ecosystem, spelled as the update bot spells it in a branch name, which
-# is where the landing party reads it. WITH AN UNDERSCORE, and that is not a detail: the estate's
-# landing ledger records a revision of the other lane's gate that compared the hyphenated form
-# against this value, matched nothing, and therefore permitted nothing while reading as though it
-# permitted more. That defect is transcribed rather than corrected there, so that it stays
-# visible; here the correct spelling is pinned by a test.
+# The workflow-automation ecosystem, spelled as the update bot spells it in a BRANCH NAME, which
+# is where the landing party reads it. WITH AN UNDERSCORE, and that is not a detail.
+#
+# THE VOCABULARY IS THE BRANCH SEGMENT, NOT `package-ecosystem`, and the two disagree. A
+# `dependabot.yml` says `github-actions`; the branch says `github_actions`, because the value the
+# update bot normalises into `dependabot/<ecosystem>/<rest>` is the identifier rather than the
+# configured spelling. `npm` configures as `npm` and appears as `npm_and_yarn`. An author adding a
+# member here must read a real branch name, not a config file.
+#
+# AND A MISSPELLING HERE FAILS THE UNSAFE WAY, which is the opposite of the same mistake in the
+# other lane. There the ecosystem sits on the PERMITTING side, so the estate's landing ledger
+# records a gate revision that compared the hyphenated form, matched nothing, and permitted
+# nothing -- it under-permitted, invisibly, which is why the ledger transcribes the literal rather
+# than correcting it. Here the ecosystem sits on the EXCLUDING side: a member nothing matches
+# excludes nothing, so the landing party ADMITS exactly the ecosystem this exclusion exists for.
+# That is why the spelling is pinned by a test rather than trusted to review.
 GITHUB_ACTIONS: Final = "github_actions"
 
 
@@ -106,6 +116,11 @@ class LandingConditions:
     rationale: str
     rollout_workflows: Mapping[str, WorkflowPin] = field(default_factory=dict)
     # ADR-0036. WHICH RULE A VERSION DECIDES BY, carried as the presence of this field.
+    #
+    # MEMBERS ARE SPELLED AS A BRANCH SPELLS THEM -- the second segment of
+    # `dependabot/<ecosystem>/<rest>` -- and NOT as `dependabot.yml` spells them. See
+    # `GITHUB_ACTIONS` above for why the two differ and why getting it wrong admits rather than
+    # refuses.
     #
     # `None` -- every version before the fifth -- means the version decides by `update_types`.
     # A frozenset means it decides on the OUTCOME: a bump whose required checks pass may land
@@ -565,10 +580,15 @@ V4: Final = DeployPolicy(
 # Version 5 -- Devon, 2026-08-30. Versions 1 to 4 above are retained verbatim.
 # ---------------------------------------------------------------------------
 #
-# CHANGES WHAT DECIDES, AND NOTHING ELSE. Both repositories, both criteria pairs, both remedies,
-# both rollout pins, both change classes and the freshness condition are the objects version 4
-# declared. What moves is the one condition that asked about the version NUMBER: a bump whose
-# required checks pass may now land whatever delta it states or fails to state.
+# CHANGES WHAT DECIDES, AND NOTHING ELSE ABOUT THE TERMS. Both repositories, both criteria pairs,
+# both remedies, both rollout pins, both change classes and the freshness condition are the objects
+# version 4 declared. What moves is the one condition that asked about the version NUMBER: a bump
+# whose required checks pass may now land whatever delta it states or fails to state.
+#
+# It is not free, and the cost is the one every version bump carries: raising CURRENT_VERSION
+# supersedes every currently-approved record until it is re-approved, because the landing binds an
+# approval to the version in force. This is a widening, so every held record still conforms and the
+# producer re-stamps it on its next pass -- but between those two moments nothing lands.
 #
 # ADR-0036, and it is ADR-0034's rule applied to the deploying half of the estate. The reasoning is
 # there in full; the two facts that decide it are that both lanes ALREADY gate on the required
