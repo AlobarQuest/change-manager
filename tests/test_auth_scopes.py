@@ -426,6 +426,20 @@ def test_the_read_scope_can_reach_the_deploy_policy(client, scoped, db):
     assert client.get("/api/deploy-policy", headers=_bearer("not-a-token")).status_code == 401
 
 
+def test_the_read_scope_can_reach_the_policy_at_the_path_the_lander_can_spell(client, scoped, db):
+    """ADR-0038. The second projection needs its own entry, and it is easy to leave out.
+
+    Increment 4's producer reads the rule from this document with a READ-scoped credential, and
+    the landing party reads it from the path below because it cannot spell the other one. An entry
+    covering one path does not cover the other -- `SCOPE_ROUTES` is keyed on (method, template) --
+    so a route added without one is reachable by the full bearer alone, which is the shape the
+    scope split exists to prevent. The control is the second line: an unrecognised bearer still
+    gets nothing, so the 200 above is authorization rather than an open route.
+    """
+    assert client.get("/api/landing-policy", headers=_bearer(TOKENS["read"])).status_code == 200
+    assert client.get("/api/landing-policy", headers=_bearer("not-a-token")).status_code == 401
+
+
 def test_no_narrow_scope_can_reach_the_deploy_policy_with_a_write(client, scoped):
     """It is a GET and only a GET; the method is part of the key."""
     for token in TOKENS.values():

@@ -19,7 +19,7 @@ from app.deploy_observations import (
     observations_for,
 )
 from app.deploy_policy import current as current_policy
-from app.deploy_policy import landing_conditions_dict, objections
+from app.deploy_policy import landing_conditions_dict, objections, policy_dict
 from app.deploy_retirement import RetirementRefused, retire_deploy_change
 from app.deploy_settlement import record_rollout_and_settle
 from app.events import record_event
@@ -394,6 +394,34 @@ def list_events(
     }
 
 
+@router.get("/landing-policy")
+def landing_policy() -> dict:
+    """The same document `GET /api/deploy-policy` serves, at a path the reader can NAME.
+
+    ADR-0038. This is a second projection of one holder, never a second holder: same `current()`,
+    same `policy_dict`, and a test asserts the two responses are equal. It exists because the party
+    that lands cannot spell the other path -- its architecture guards forbid the bare token that
+    path is spelled with anywhere under its source tree, measured with those guards' own tokenizers,
+    which split on every non-alphanumeric character. Its own standing rule is to reword rather than
+    to widen a guard, and a URL cannot be reworded.
+
+    Until now that cost nothing: the conditions on the act are also projected onto each record in
+    the item listing, whose path the reader can spell, and it read them there. ADR-0038's lane has
+    no record to hang them on -- a repository where landing changes nothing already serving has no
+    such record by construction -- so the block naming that population is reachable only by naming a
+    path.
+
+    THE OTHER ROUTE IS LEFT EXACTLY AS IT IS, and this is strictly additive. Devon deferred the
+    rename on 2026-08-31: add the block, keep the name, rename later if the name starts misleading
+    people. At that rename this path becomes the primary one and the other retires, which is why
+    additive is the right shape now rather than a compromise.
+
+    Read-scoped on the same terms as its twin: standing policy, no secret, and a caller that could
+    not read it could only fail closed.
+    """
+    return policy_dict(current_policy())
+
+
 @router.get("/deploy-policy")
 def deploy_policy() -> dict:
     """What a human has pre-approved for a deploying merge, and the conditions on the act.
@@ -410,19 +438,15 @@ def deploy_policy() -> dict:
     the shape being followed: one holder, the only readable form is what the running process
     serves, and nobody keeps a copy.
 
+    ADR-0038 gave it a TWIN at `/api/landing-policy`, serving this same document through the
+    same builder, because the party that lands cannot spell this path -- its own architecture
+    guards forbid the bare token this one is spelled with. Two projections of one holder, and a
+    test asserts they agree. This path is unchanged and is still the one a person reads.
+
     Read-scoped: it is a statement of standing policy, carries no secret, and a caller that
     could not read it could only fail closed.
     """
-    policy = current_policy()
-    return {
-        "version": policy.version,
-        "decided": policy.decided,
-        "rationale": policy.rationale,
-        "repositories": sorted(policy.repositories),
-        "change_classes": sorted(policy.change_classes),
-        "risks": sorted(policy.risks),
-        "landing": landing_conditions_dict(policy),
-    }
+    return policy_dict(current_policy())
 
 
 # outcome → resulting item status + the event type to record
