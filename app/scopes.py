@@ -42,6 +42,13 @@ _READ_ROUTES: Final = frozenset(
         # because this service cannot (ADR-0019 increment 5). Standing policy, no secret,
         # and a caller that could not read it could only fail closed.
         ("GET", "/api/deploy-policy"),
+        # ADR-0038. The same document at a path the LANDING PARTY can spell. Its architecture
+        # guards forbid the bare token the path above is spelled with anywhere under its source
+        # tree, and its own rule is to reword rather than to widen a guard -- which a URL cannot
+        # be. Both entries are needed, not one: this is a second projection of one holder, and the
+        # path above is still the one a person reads and the one the item listing's own comment
+        # points at.
+        ("GET", "/api/landing-policy"),
     }
 )
 
