@@ -29,6 +29,10 @@
   <form method="post" action="/items/{{ it.id }}/resolve" style="display:inline"><button type="submit">Resolve</button></form>
   <form method="post" action="/items/{{ it.id }}/wontfix" style="display:inline"><button type="submit">Won't-fix</button></form>
 </p>
+{% elif it.status == "resolved" %}
+{# resolved is terminal by design (2026-08-21 ruling): a decline is reversible,
+   a thing that happened is not. Say so; offer nothing to click. #}
+<p><span class="badge">TERMINAL</span> This item is resolved. No further action is available.</p>
 {% endif %}
 {% if it.handoff_brief %}
 <h3>Handoff brief <span class="badge">{{ it.lane }}</span></h3>
