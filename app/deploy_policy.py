@@ -1054,3 +1054,38 @@ def inert_landing_dict(policy: DeployPolicy) -> dict | None:
         "require_head_current_with_base": inert.require_head_current_with_base,
         "rationale": inert.rationale,
     }
+
+
+def policy_dict(policy: DeployPolicy) -> dict:
+    """The served shape of a policy version, built ONCE for both routes that serve it.
+
+    ADR-0038 gave this document a second route, because the party that lands cannot spell the
+    first one -- its architecture guards forbid the bare token that path is spelled with anywhere
+    under its source tree, and its own rule is to reword rather than to widen a guard, which a URL
+    cannot be. The two routes are two PROJECTIONS of one holder, and that is only true while they
+    resolve through the same `current()` and this builder. Two routes composing their own bodies
+    would be the second holder this module's header exists to prevent.
+
+    It is here rather than beside the routes so that the omission below can be asserted over every
+    retained version. A route only ever serves `current()`, so a test through the routes cannot
+    reach a version that declares no inert population -- which is exactly the case the omission is
+    for.
+    """
+    served = {
+        "version": policy.version,
+        "decided": policy.decided,
+        "rationale": policy.rationale,
+        "repositories": sorted(policy.repositories),
+        "change_classes": sorted(policy.change_classes),
+        "risks": sorted(policy.risks),
+        "landing": landing_conditions_dict(policy),
+    }
+    # ADR-0038. THE KEY IS OMITTED BY A VERSION THAT DECLARES NO INERT POPULATION, and its
+    # presence is what tells the landing party it has a second lane at all. The reason an empty
+    # block is the wrong answer is on `inert_landing_dict`; this is where that None becomes an
+    # absent key rather than a null one, because a reader that keys on presence must not be handed
+    # a key whose value it then has to interpret.
+    inert = inert_landing_dict(policy)
+    if inert is not None:
+        served["inert_landing"] = inert
+    return served

@@ -33,6 +33,7 @@ from app.deploy_policy import (
     inert_landing_dict,
     landing_conditions_dict,
     objections,
+    policy_dict,
     policy_for,
 )
 from app.models import ChangeEvent, ChangeItem
@@ -1414,6 +1415,25 @@ def test_version_sixs_rationale_records_the_decision_it_rests_on():
     # is no pace condition beside a freshness condition.
     assert "docker" in v6.inert_landing.rationale
     assert "pace" in v6.inert_landing.rationale
+
+
+def test_the_served_body_omits_the_inert_block_for_a_version_that_declares_none():
+    """The omission asserted where it is REACHABLE, which is not through either route.
+
+    A route only ever serves `current()`, so no test through HTTP can reach a version that
+    declares no inert population -- and that is precisely the case the omission exists for. The
+    branch would therefore be unkillable if this were tested only at the routes: a mutation
+    serving the key unconditionally would pass everything, while a later version that dropped the
+    block would start telling every reader it had a lane with nobody in it.
+
+    That is why `policy_dict` is in the policy module rather than beside the routes.
+    """
+    for version in (1, 2, 3, 4, 5):
+        policy = policy_for(version)
+        assert policy is not None
+        assert "inert_landing" not in policy_dict(policy), version
+
+    assert "inert_landing" in policy_dict(current())
 
 
 def test_the_policy_route_serves_the_inert_population(client, m2m):
