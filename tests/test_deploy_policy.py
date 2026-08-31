@@ -26,6 +26,7 @@ from app.db import Base
 from app.deploy_changes import POLICY_ACTOR, propose_deploy_change
 from app.deploy_policy import (
     CURRENT_VERSION,
+    DEPENDABOT,
     DOCKER,
     GITHUB_ACTIONS,
     REGISTRY,
@@ -1317,6 +1318,51 @@ def test_the_inert_exclusion_is_docker_and_the_deploying_one_is_not():
     assert policy.inert_landing.excluded_ecosystems != policy.landing.excluded_ecosystems
 
 
+def test_the_inert_lane_permits_the_update_bot_and_nobody_else():
+    """The condition the workflow gated on FIRST, and the only thing bounding this lane's subjects.
+
+    It is a field rather than a sentence in the rationale because the two readings of a
+    prose-only condition are "apply something the document does not declare" and "drop it", and
+    the second is a live fail-open: four of the six repositories declared here carry a factory
+    caller workflow, so a machine-authored pull request with green checks is a real subject. This
+    lane asks none of the questions the factory's own landing lane asks of one -- whether the unit
+    completed, whether the verifier decided its criteria from observed evidence, whether an
+    authority approval is bound to the envelope.
+
+    Asserted as an EXACT set rather than as membership: `DEPENDABOT in permitted_authors` is
+    satisfied by a version that permits everybody, which is the shape this exists to refuse.
+
+    The spelling is `pull_request.user.login`'s and not `gh pr view --json author`'s, which
+    answers `app/dependabot` for the same pull request. It permits rather than excludes, so a
+    wrong value under-permits and the lane goes quiet -- the direction nobody notices, which is
+    why a test holds it.
+    """
+    inert = current().inert_landing
+    assert inert is not None
+
+    assert DEPENDABOT == "dependabot[bot]"
+    assert inert.permitted_authors == frozenset({"dependabot[bot]"})
+
+
+def test_a_declared_inert_population_PERMITS_SOMEBODY_AND_NOT_EVERYBODY():
+    """Both directions, because the two failures are opposite and only one is loud.
+
+    An empty author set makes the lane land nothing, which somebody notices within a day. A set
+    this schema cannot bound -- the failure a later author reaching for "any bot" would produce --
+    lands anything, quietly. Stated over every version that declares a block, since a later
+    version widening it is how either arrives.
+    """
+    for policy in REGISTRY.values():
+        inert = policy.inert_landing
+        if inert is None:
+            continue
+        assert inert.permitted_authors, f"version {policy.version} permits no author"
+        assert inert.permitted_authors <= frozenset({DEPENDABOT}), (
+            f"version {policy.version} permits an author nobody decided: "
+            f"{sorted(inert.permitted_authors - {DEPENDABOT})}"
+        )
+
+
 def test_the_inert_lane_requires_freshness():
     """A TIGHTENING over the workflow this replaces, which required nothing.
 
@@ -1345,6 +1391,7 @@ def test_the_inert_block_declares_nothing_the_deploying_lane_owns():
     assert inert is not None
     assert {f.name for f in fields(inert)} == {
         "repositories",
+        "permitted_authors",
         "excluded_ecosystems",
         "require_head_current_with_base",
         "rationale",
@@ -1437,10 +1484,20 @@ def test_the_served_body_omits_the_inert_block_for_a_version_that_declares_none(
 
 
 def test_the_policy_route_serves_the_inert_population(client, m2m):
+    declared = current().inert_landing
+    assert declared is not None
     body = client.get("/api/deploy-policy", headers=m2m).json()
     assert body["version"] == CURRENT_VERSION
+    assert body["inert_landing"]["permitted_authors"] == ["dependabot[bot]"]
     assert body["inert_landing"]["excluded_ecosystems"] == ["docker"]
     assert body["inert_landing"]["require_head_current_with_base"] is True
+
+    # THE RATIONALE REACHES THE WIRE, which nothing asserted until adversarial review mutated it
+    # to the empty string and watched the whole suite pass. It is the only artifact a reader
+    # re-deriving this in a year has, and a served block that lost it would still carry every
+    # term -- so the omission is invisible in exactly the direction that matters.
+    assert body["inert_landing"]["rationale"] == declared.rationale
+    assert "ADR-0038" in body["inert_landing"]["rationale"]
     assert "alobarquest/factory-runner" in body["inert_landing"]["repositories"]
     assert len(body["inert_landing"]["repositories"]) == 6
 

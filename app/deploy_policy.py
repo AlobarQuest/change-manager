@@ -81,6 +81,19 @@ GITHUB_ACTIONS: Final = "github_actions"
 # this exclusion exists for. Pinned by a test for that reason and not for tidiness.
 DOCKER: Final = "docker"
 
+# The update bot, spelled as `pull_request.user.login` spells it -- and THERE ARE TWO
+# SPELLINGS OF ONE IDENTITY, which is the reason this is a constant rather than a literal.
+# GitHub's REST `pulls/{n}` answers `dependabot[bot]` with `user.type == 'Bot'`; `gh pr view
+# --json author` answers `app/dependabot` for the same pull request, measured on
+# alobarquest/orchestrator#3 on 2026-08-31. The workflow this rule comes from keys on the
+# first (`github.event.pull_request.user.login == 'dependabot[bot]'`), so that is the one
+# declared here.
+#
+# IT SITS ON THE PERMITTING SIDE, so a wrong spelling here under-permits and the lane simply
+# stops landing -- the safe direction, and therefore the one nobody notices. That is the
+# opposite of the exclusions above and is why both are pinned by tests rather than one.
+DEPENDABOT: Final = "dependabot[bot]"
+
 
 @dataclass(frozen=True)
 class WorkflowPin:
@@ -173,6 +186,28 @@ class InertLanding:
     therefore the WHOLE of what this document says about the act for this population**: a landing
     party may not add a condition this block does not state, and may not drop one it does.
 
+    WHICH IS WHY `permitted_authors` IS A FIELD RATHER THAN A SENTENCE IN THE RATIONALE, and it
+    was nearly the latter. The rule this block moves gated on the author first -- the workflow's
+    own condition is `github.event.pull_request.user.login == 'dependabot[bot]'` -- and leaving
+    that in prose would have left a landing party two readings, neither safe: apply a condition
+    the document does not declare, or drop it. The second is a real fail-open and not a
+    hypothetical one. Four of the six repositories declared below carry a factory caller
+    workflow (measured 2026-08-31), so a FACTORY-opened pull request there with green checks
+    would otherwise be landable by a lane that never asks whether the unit completed, whether the
+    verifier decided its criteria from observed evidence, or whether an authority approval is
+    bound to the envelope. The deploying lane needs no such field because its producer refuses a
+    non-bot pull request upstream, so its subjects are bot-only by construction; this lane has no
+    record and therefore no upstream filter, and the author condition is the only thing bounding
+    which pull requests it ever sees. Version 4 reached the same conclusion about the deploying
+    lane's own gap and put it exactly here: the refusal belongs on the party that reads GitHub,
+    keyed on something this document NAMES.
+
+    THE VERSION A LANDING PARTY ATTRIBUTES A LANDING TO IS THE DOCUMENT'S, NOT THIS BLOCK'S. One
+    `version` covers both populations, so a later version that moves only a rollout pin in the
+    deploying half also re-stamps what an inert landing is attributed to. That follows from one
+    holder and is the right trade; it is recorded because a reader of those attributions will
+    otherwise assume the number tracks the rule it names.
+
     THIS SERVICE STILL EVALUATES NOTHING, like every other term here. Whether a pull request was
     opened by the update bot, which ecosystem the second segment of its branch names, whether its
     required checks passed and whether its head is current with the base all live in GitHub, and
@@ -180,6 +215,10 @@ class InertLanding:
     """
 
     repositories: frozenset[str]
+    # WHOSE pull requests. Spelled as `pull_request.user.login` spells it -- see `DEPENDABOT`
+    # above, where two spellings of one identity are why this is a constant. It permits rather
+    # than excludes, so a wrong value under-permits and the lane goes quiet.
+    permitted_authors: frozenset[str]
     # Spelled as a BRANCH spells it, and read from a real branch rather than from a config file.
     # See `DOCKER` and `GITHUB_ACTIONS` above: the two vocabularies agree for one and disagree for
     # the other, and a member nothing matches excludes nothing.
@@ -833,11 +872,20 @@ V5: Final = DeployPolicy(
 # repository from the factory on a trust loop -- the runner verifying changes to itself. The
 # reason that does not reach here is that ADR-0015 excluded DISPATCHING work into it, where a
 # coding agent authors the change. This lane lands a change the update bot authored, whose diff is
-# a version number, behind a required check that genuinely gates: `factory-runner` is the one
-# repository in this estate carrying `enforce_admins: true`, chosen precisely because a bad merge
-# there stops every dispatch. Different acts, different risks. It is 8 of the 52 landings measured
-# across the six over the preceding thirty days, and because the population is a declared list,
-# removing it later is a one-line version bump.
+# a version number, behind a required check that genuinely gates: of the six repositories declared
+# below, `factory-runner` is the ONLY one carrying `enforce_admins: true`, chosen precisely
+# because a bad merge there stops every dispatch. Different acts, different risks.
+#
+#   BE PRECISE ABOUT THAT CLAIM, because a first draft of this block said `factory-runner` is the
+#   one repository in the ESTATE with `enforce_admins: true`, and that is false: measured
+#   2026-08-31 against the protection API, it is true of `factory-runner`, `change-manager` and
+#   `brain` and false of the other five here. The two extras are the DEPLOYING population this
+#   same document declares, so the wider claim was false about its own other half. The narrower
+#   one is what the argument needs and is what was measured.
+#
+# ADR-0038 records the blast radius as 8 of the 52 landings across the six over the preceding
+# thirty days -- cited from that decision rather than re-measured here. Because the population is
+# a declared list, removing a member later is a one-line version bump.
 #
 # EVERY MEMBER WAS CONFIRMED `inert` BY THE ESTATE'S OWN REGISTRY on 2026-08-31, and the
 # declaration below is not the authority for it. The registry answers a repository-level
@@ -856,10 +904,10 @@ V5: Final = DeployPolicy(
 #
 # WHAT IS GIVEN UP, STATED PLAINLY. The workflow this replaces was GitHub-native and landed even
 # when this estate's own services were down; routine dependency hygiene now depends on them.
-# Devon accepted that explicitly when ruling the direction. What is gained was measured rather
-# than argued: across the estate's merge history, 38 landings by the workflow's arming identity
-# fired ZERO `on: push` runs against 18 by the orchestrator's own merger firing 18, so this
-# switches default-branch CI back on for all six.
+# Devon accepted that explicitly when ruling the direction. What is gained is that default-branch
+# CI switches back on for all six: ADR-0038 records 38 landings by the workflow's arming identity
+# firing ZERO `on: push` runs against 18 by the orchestrator's own merger firing 18. Cited from
+# that decision rather than re-measured here.
 _V6_INERT: Final = InertLanding(
     repositories=frozenset(
         {
@@ -871,6 +919,7 @@ _V6_INERT: Final = InertLanding(
             "alobarquest/factory-runner",
         }
     ),
+    permitted_authors=frozenset({DEPENDABOT}),
     excluded_ecosystems=frozenset({DOCKER}),
     require_head_current_with_base=True,
     rationale=(
@@ -880,6 +929,13 @@ _V6_INERT: Final = InertLanding(
         "the ecosystems those checks do not exercise. ADR-0038, decided 2026-08-31. This is not a "
         "new rule: it is the rule a GitHub Actions workflow enforced across these same six "
         "repositories, moved to the one place its three readers can ask rather than transcribe. "
+        "THE AUTHOR IS A DECLARED CONDITION AND NOT AN ASSUMPTION. The workflow gated on it "
+        "first, and it is the only thing bounding which pull requests this lane sees at all -- "
+        "there is no change record here, so there is no upstream filter of the kind the "
+        "deploying lane gets for free from a producer that refuses a non-bot pull request. Four "
+        "of these six repositories carry a factory caller workflow, so a machine-authored pull "
+        "request with green checks is a real subject rather than a hypothetical one, and this "
+        "lane asks none of the questions the factory's own landing lane asks of one. "
         "THE EXCLUSION IS `docker`, AND IT IS THE SAME PRINCIPLE THE DEPLOYING LANE APPLIES TO A "
         "DIFFERENT ECOSYSTEM: exclude where the required checks do not exercise what changed. "
         "There the rollout job runs on no pull request, so a workflow-automation bump would be "
@@ -1050,6 +1106,7 @@ def inert_landing_dict(policy: DeployPolicy) -> dict | None:
         return None
     return {
         "repositories": sorted(inert.repositories),
+        "permitted_authors": sorted(inert.permitted_authors),
         "excluded_ecosystems": sorted(inert.excluded_ecosystems),
         "require_head_current_with_base": inert.require_head_current_with_base,
         "rationale": inert.rationale,
