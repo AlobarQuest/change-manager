@@ -24,7 +24,15 @@ from sqlalchemy.orm import Session
 
 from app.db import Base
 from app.deploy_changes import POLICY_ACTOR, propose_deploy_change
-from app.deploy_policy import CURRENT_VERSION, REGISTRY, current, objections, policy_for
+from app.deploy_policy import (
+    CURRENT_VERSION,
+    GITHUB_ACTIONS,
+    REGISTRY,
+    current,
+    landing_conditions_dict,
+    objections,
+    policy_for,
+)
 from app.models import ChangeEvent, ChangeItem
 from app.schemas import DeployChangeIn
 from app.transitions import TransitionError, decide
@@ -351,9 +359,16 @@ def test_an_unreadable_field_is_an_objection_rather_than_a_skip(field):
 
 
 def test_the_landing_conditions_are_declared_but_not_evaluated_here():
-    """This service has no GitHub egress, so these are served for the party that has."""
+    """This service has no GitHub egress, so these are served for the party that has.
+
+    Since version 5 the ecosystem is one of them, and it is the clearest case of the rule this
+    docstring states: the ecosystem is the second segment of the branch the update bot opened,
+    which lives in GitHub, so this file names the excluded set and the landing party reads which
+    one a pull request is in.
+    """
     policy = current()
-    assert policy.landing.update_types == frozenset({"semver-patch", "semver-minor"})
+    assert policy.landing.excluded_ecosystems == frozenset({"github_actions"})
+    assert policy.landing.update_types == frozenset()
     assert policy.landing.require_head_current_with_base is True
 
 
@@ -361,7 +376,8 @@ def test_the_policy_route_serves_the_conditions_a_landing_needs(client, m2m):
     body = client.get("/api/deploy-policy", headers=m2m).json()
     assert body["version"] == CURRENT_VERSION
     assert body["repositories"] == ["alobarquest/brain", "alobarquest/change-manager"]
-    assert body["landing"]["update_types"] == ["semver-minor", "semver-patch"]
+    assert body["landing"]["excluded_ecosystems"] == ["github_actions"]
+    assert body["landing"]["update_types"] == []
     assert body["landing"]["require_head_current_with_base"] is True
 
 
@@ -394,7 +410,7 @@ def test_the_current_version_pins_the_rollout_workflow_of_every_repository_it_na
     """A repository the policy admits with no pinned workflow is a repository whose criteria
     describe bytes nobody named, which is the hole this version exists to close."""
     policy = current()
-    assert CURRENT_VERSION == 3
+    assert CURRENT_VERSION == 5
     for repository in policy.repositories:
         pin = policy.landing.rollout_workflows.get(repository)
         assert pin is not None, f"{repository} is admitted with no rollout-workflow pin"
@@ -477,7 +493,7 @@ def test_the_two_version_fields_are_not_the_same_question(client, m2m, db):
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 1
-    assert served["landing_policy_version"] == CURRENT_VERSION == 3
+    assert served["landing_policy_version"] == CURRENT_VERSION == 5
 
 
 def test_a_drift_record_carries_no_landing_conditions(client, m2m, db):
@@ -770,23 +786,426 @@ def test_a_record_approved_under_version_two_is_bound_until_it_is_re_approved(cl
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 2
-    assert served["landing_policy_version"] == 3
+    assert served["landing_policy_version"] == 5
 
     replay = client.post("/api/deploy-changes", json=conformant(), headers=m2m)
 
-    assert replay.json()["policy_version"] == 3
+    assert replay.json()["policy_version"] == 5
 
 
-def test_version_three_does_not_widen_what_may_land(client, m2m):
-    """brain's queue holds two requirement-range bumps, and they must stay unlandable.
+def test_version_three_did_not_widen_what_may_land():
+    """brain's queue held two requirement-range bumps, and version 3 left them unlandable.
 
-    A requirement range states no single delta, so it carries no update type at all and is refused
-    for want of a parseable delta -- by the party that reads GitHub, since this service cannot.
-    What is asserted here is that version 3 gave brain no allowance of its own: one update-type set
-    governs both repositories, and it is still patch and minor.
+    A requirement range states no single delta, so it carried no update type at all and was
+    refused for want of a parseable delta -- by the party that reads GitHub, since this service
+    cannot. What is asserted is that version 3 gave brain no allowance of its own: one update-type
+    set governed both repositories, and it was still patch and minor.
+
+    **READ FROM `policy_for(3)` AND NO LONGER FROM THE ROUTE**, which is the correction version 5
+    forces rather than a tidy-up. Written against the route, this test asserted a property of
+    whatever version happens to be current, under a name that says version 3 -- so version 5
+    changing what may land would have reddened a test about a version it does not touch, and a
+    reader would have had to decide which of the two things the test meant. Version 3 is retained
+    verbatim, so its own terms are what a test about version 3 must read.
     """
-    landing = client.get("/api/deploy-policy", headers=m2m).json()["landing"]
+    v3 = policy_for(3)
+    assert v3 is not None
+    assert v3.landing.update_types == frozenset({"semver-minor", "semver-patch"})
+    assert v3.landing.excluded_ecosystems is None, "version 3 predates the outcome rule"
+    assert set(v3.landing.rollout_workflows) == {BRAIN, CHANGE_MANAGER}
 
-    assert landing["update_types"] == ["semver-minor", "semver-patch"]
-    assert set(landing["rollout_workflows"]) == {BRAIN, CHANGE_MANAGER}
-    assert "update_types" not in landing["rollout_workflows"][BRAIN]
+
+# ---------------------------------------------------------------------------
+# Version 4 -- the factory class joins (ADR-0025).
+# ---------------------------------------------------------------------------
+
+FACTORY_CLASS = "factory-delivery"
+BOT_CLASS = "dependency-update"
+
+# A class the orchestrator really does use for other work and that NO version of this policy has
+# ever admitted. It is the discriminating control on every affirmative test below: a version that
+# admitted the factory class by loosening the class term itself would pass all of them and refuse
+# nothing, and this is the assertion that tells the two apart.
+_A_CLASS_NO_VERSION_ADMITS = "software-delivery"
+
+
+def factory_conformant(**overrides) -> dict:
+    """A factory record as `change_proposer` derives one: change-manager's terms, its own class.
+
+    `change_class` is the field POLICY reads: the producer writes `BOT_CHANGE_CLASS` when a pull
+    request has no work-unit id in its title and `FACTORY_CHANGE_CLASS` when it has one, and this
+    fixture varies exactly that.
+
+    It is NOT the only field that differs, and saying so would be wrong: `_reasoning` also appends
+    a sentence naming the work unit. That field is not a policy term, so conformance is unaffected
+    -- but a real factory payload and a bot's are not interchangeable, and a fixture claiming they
+    were would invite a later reader to test one believing it had tested both.
+    """
+    defaults = {"change_class": FACTORY_CLASS, "pull_request_number": 81}
+    return conformant(**{**defaults, **overrides})
+
+
+def test_version_four_admits_the_factory_class_and_changes_nothing_else():
+    """Both halves, because either alone is the wrong change.
+
+    A version that admits the factory class by also moving a repository, a criterion, a remedy or
+    a condition on the act would re-decide, silently, terms that three consecutive autonomous
+    landings were approved under. And a version that changed nothing would be a version that
+    reads as shipped and approves no factory record.
+
+    Asserted as an EXACT union rather than as membership: `>= v3.change_classes | {factory}` is
+    satisfied by a version that admits everything, which is the failure this grant is narrow to
+    avoid.
+    """
+    v3, v4 = policy_for(3), policy_for(4)
+    assert v3 is not None and v4 is not None
+
+    assert v4.change_classes == v3.change_classes | {FACTORY_CLASS}
+    assert BOT_CLASS in v4.change_classes, "the class it already admitted is still admitted"
+    assert _A_CLASS_NO_VERSION_ADMITS not in v4.change_classes
+
+    assert v4.repositories == v3.repositories
+    assert v4.risks == v3.risks
+    assert v4.acceptance_criteria == v3.acceptance_criteria
+    assert v4.rollback_plans == v3.rollback_plans
+    assert v4.landing.update_types == v3.landing.update_types
+    assert v4.landing.require_head_current_with_base is True
+    assert v4.landing.rollout_workflows == v3.landing.rollout_workflows
+
+
+def test_version_fours_rationale_records_the_decision_it_rests_on():
+    """The `rationale` string is the RECORD, which is what every version of this file uses it as.
+
+    Pinned as a citation and a subject rather than as prose, because prose is exactly what a
+    version bump should be free to word for itself. What it must not be free to do is ship
+    version 3's rationale copied over -- a version whose recorded reasoning describes a grant it
+    does not make, and the only artifact a reader re-deriving this approval in a year will have.
+    """
+    v3, v4 = policy_for(3), policy_for(4)
+    assert v3 is not None and v4 is not None
+    assert "ADR-0025" in v4.rationale
+    assert FACTORY_CLASS in v4.rationale
+    assert v4.rationale != v3.rationale
+
+
+def test_a_factory_proposal_conforms_and_is_approved_by_the_server(client, m2m, db):
+    """ADR-0025's whole subject: no per-record human approval, so conformance decides.
+
+    Before version 4 this exact payload was refused `change_class_not_in_policy` and sat pending
+    until a person clicked -- and change-manager has no GitHub egress, so what that person would
+    have been shown could not have included the change.
+    """
+    response = client.post("/api/deploy-changes", json=factory_conformant(), headers=m2m)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "approved"
+    assert body["policy_objections"] == []
+    assert body["policy_version"] == CURRENT_VERSION
+    row = db.get(ChangeItem, body["id"])
+    assert row is not None and row.decided_by == POLICY_ACTOR
+
+
+def test_a_factory_proposal_for_brain_is_approved_on_the_same_terms(client, m2m, db):
+    """The grant is over the CLASS, so it reaches every repository the policy already named --
+    and it reaches them on each repository's own criteria, which brain's differ in."""
+    payload = brain_conformant(change_class=FACTORY_CLASS, pull_request_number=82)
+
+    body = client.post("/api/deploy-changes", json=payload, headers=m2m).json()
+
+    assert body["status"] == "approved"
+    assert body["policy_version"] == CURRENT_VERSION
+
+
+def test_a_factory_record_for_a_repository_outside_the_policy_is_still_refused(client, m2m):
+    """THE CLASS GRANT DID NOT BECOME A REPOSITORY GRANT, which is ADR-0025's first boundary.
+
+    Sent carrying change-manager's ratified criteria and remedy, so the repository term is the
+    only thing left that can refuse it -- a payload that also failed on criteria would pass this
+    test with the repository term deleted.
+    """
+    borrowed = factory_conformant(target_repository="alobarquest/orchestrator")
+
+    body = client.post("/api/deploy-changes", json=borrowed, headers=m2m).json()
+
+    assert body["status"] == "pending"
+    assert body["policy_version"] is None
+    assert body["policy_objections"] == ["repository_not_in_policy"]
+
+
+def test_the_grant_is_two_named_classes_and_not_any_class(client, m2m):
+    """The control on every affirmative test above: version 4 admits a NAMED second class.
+
+    Had the class term been loosened rather than extended -- dropped, or turned into a truth
+    test -- every factory assertion here would still pass while the policy approved anything a
+    producer chose to write. This is the payload that tells those two versions apart.
+    """
+    body = client.post(
+        "/api/deploy-changes",
+        json=factory_conformant(change_class=_A_CLASS_NO_VERSION_ADMITS),
+        headers=m2m,
+    ).json()
+
+    assert body["status"] == "pending"
+    assert "change_class_not_in_policy" in body["policy_objections"]
+
+
+def test_a_factory_record_is_held_to_the_same_criteria_as_any_other(client, m2m):
+    """Admitting the class loosened nothing else, and the load-bearing term is the one to prove
+    it on: criteria a human never ratified are refused whoever authored the change.
+
+    This is also where the ceiling ADR-0025 records becomes visible. Criteria are keyed by
+    REPOSITORY and classes are a flat set, so factory work is held to exactly the two criteria a
+    lockfile bump is -- both statements about the deployment mechanism, so both true, and no way
+    to require more of one than the other without keying criteria on repository and class
+    together. That is a separate decision and is not made here.
+    """
+    body = client.post(
+        "/api/deploy-changes",
+        json=factory_conformant(acceptance_criteria=["something a human never ratified"]),
+        headers=m2m,
+    ).json()
+
+    assert body["status"] == "pending"
+    assert "acceptance_criteria_not_ratified" in body["policy_objections"]
+
+
+def test_a_factory_approval_survives_a_separate_connection(file_engine):
+    """The approval is COMMITTED, not merely returned.
+
+    A file database and a second Session, for the reason the same assertion gives above: this
+    repository's suite runs `:memory:` behind a `StaticPool`, which hands every session ONE
+    connection, so a flushed-but-uncommitted row is visible to a "second session" there. The
+    approval this test is about is the single authorization permitting a machine-authored change
+    to reach production unattended, so a write that looks right and is discarded is exactly the
+    failure worth spending a real database on.
+    """
+    with Session(file_engine) as writing:
+        item, created = propose_deploy_change(writing, DeployChangeIn(**factory_conformant()))
+        assert created and item.status == "approved"
+        item_id = item.id
+
+    with Session(file_engine) as other:
+        stored = other.get(ChangeItem, item_id)
+        assert stored is not None
+        assert stored.status == "approved"
+        assert stored.change_class == FACTORY_CLASS
+        assert stored.policy_version == CURRENT_VERSION
+        assert stored.decided_by == POLICY_ACTOR
+
+
+def test_a_record_approved_under_version_three_still_means_what_it_meant():
+    """Version 3 is retained VERBATIM, so an approval recorded under it stays re-derivable.
+
+    The registry lookup alone would pass against an edited version 3, which is the failure the
+    module's editing contract exists to prevent -- so the terms are asserted too, including the
+    one version 4 changed. A record stamped 3 was approved for `dependency-update` and for
+    nothing else, and that is still what looking version 3 up says.
+    """
+    v3 = policy_for(3)
+    assert v3 is not None and v3 is not current()
+    assert v3.version == 3 and v3.decided == "2026-08-15"
+    assert v3.change_classes == frozenset({BOT_CLASS})
+    assert FACTORY_CLASS not in v3.change_classes
+    assert v3.repositories == {BRAIN, CHANGE_MANAGER}
+
+    # A LITERAL, because V3 and V4 share the `_V3_BRAIN_CRITERIA` OBJECT -- so comparing
+    # `v3.acceptance_criteria[BRAIN]` against `current()`'s compares a reference with itself and
+    # passes even when that constant has been edited in place, which is the exact failure this
+    # test's docstring names. Only a literal can see it.
+    assert v3.acceptance_criteria[BRAIN] == (
+        "the rollout runs for this merge on alobarquest/brain, and its production step "
+        "concludes success (job 'deploy', step 'Deploy brain apps')",
+        "every brain application this rollout triggered answered /api/health reporting the "
+        "merged commit as its revision and a status of ok, within 600 seconds; an application "
+        "whose Coolify UUID secret is unset is neither triggered nor checked, and a rollout "
+        "that triggered none fails rather than passing empty",
+    )
+
+
+def test_version_four_did_not_widen_what_may_land():
+    """A class grant is not a landing grant. ADR-0025's second boundary: policy approval means
+    NO OBJECTION, never GO AHEAD, and every condition on the act is unchanged.
+
+    WHAT THIS TEST DOES NOT ESTABLISH, stated because an earlier version of it claimed to. It is
+    tempting to read "the update types are unchanged" as "so a factory pull request can never be
+    landed by that lane". That inference is FALSE and was measured to be: the pattern reading a
+    version delta out of a title is only END-anchored, so `SDS <unit>: Bump ruff from 0.15.20 to
+    0.16.2` parses as `semver-patch` while `SDS <unit>: Reformat embedded code blocks` does not.
+    A unit title is free text a human writes, so the separation would rest on wording.
+
+    That lane selects subjects on approved status alone and asks nothing about the change class,
+    so this version makes factory records visible to it for the first time. The refusal belongs
+    there, keyed on the class this version names -- it is not a term this policy can express, and
+    asserting it here would be this file vouching for a guarantee another repository owes.
+    """
+    v4 = policy_for(4)
+    assert v4 is not None
+    assert v4.version == 4
+    assert v4.landing.update_types == frozenset({"semver-minor", "semver-patch"})
+    assert v4.landing.excluded_ecosystems is None, "version 4 predates the outcome rule"
+    assert v4.landing.require_head_current_with_base is True
+    assert set(v4.landing.rollout_workflows) == {BRAIN, CHANGE_MANAGER}
+
+
+# ---------------------------------------------------------------------------
+# Version 5 -- what decides is the outcome (ADR-0036).
+# ---------------------------------------------------------------------------
+
+
+def test_version_five_changes_what_decides_and_nothing_else():
+    """The version's whole claim, asserted term by term against the one it supersedes.
+
+    ADR-0036 moves exactly one condition on the act. Every other term is version 4's own object,
+    so a version that quietly widened a repository, a class, a criterion, a remedy or a pin while
+    wearing this version's rationale would fail here.
+    """
+    v4, v5 = policy_for(4), policy_for(5)
+    assert v4 is not None and v5 is not None
+    assert v5 is current()
+
+    assert v5.repositories == v4.repositories
+    assert v5.change_classes == v4.change_classes
+    assert v5.risks == v4.risks
+    assert v5.acceptance_criteria == v4.acceptance_criteria
+    assert v5.rollback_plans == v4.rollback_plans
+    assert v5.landing.rollout_workflows == v4.landing.rollout_workflows
+    assert v5.landing.require_head_current_with_base is True
+
+    # The one thing that moves, in both directions: the delta stops deciding and the exclusion
+    # starts being stated rather than inferred from one.
+    assert v4.landing.excluded_ecosystems is None
+    assert v5.landing.excluded_ecosystems == frozenset({GITHUB_ACTIONS})
+    assert v5.landing.update_types == frozenset()
+
+
+def test_the_excluded_ecosystem_is_spelled_the_way_a_BRANCH_spells_it():
+    """An underscore, and this is not pedantry.
+
+    The estate's other lane carries a gate revision that compared the HYPHENATED spelling against
+    this exact value, matched nothing, and therefore permitted nothing while reading as though it
+    permitted more. Its registry transcribes that literal rather than correcting it, so the defect
+    stays visible. Here the spelling is what the landing party matches the second segment of a
+    branch against, and getting it wrong would OVER-refuse -- the safe direction, and therefore
+    the one nobody notices.
+    """
+    assert GITHUB_ACTIONS == "github_actions"
+    assert current().landing.excluded_ecosystems == frozenset({"github_actions"})
+
+
+def test_every_superseded_version_still_decides_by_update_type():
+    """The editing contract, asserted over the field version 5 adds rather than only in prose.
+
+    An approval stamped 1, 2, 3 or 4 was granted under a rule about version deltas. If any of
+    them acquired an excluded set, looking that version up would report a decision nobody made --
+    and the landing party keys the RULE IT APPLIES on exactly this field, so the edit would not
+    merely misdescribe the past, it would change what a record approved under it may land.
+    """
+    for version in (1, 2, 3, 4):
+        policy = policy_for(version)
+        assert policy is not None
+        assert policy.landing.excluded_ecosystems is None, version
+        assert policy.landing.update_types == frozenset({"semver-minor", "semver-patch"}), version
+
+
+def test_a_version_that_does_not_decide_on_the_outcome_OMITS_the_key():
+    """Presence is what tells the landing party which rule to apply, so absence has to be real.
+
+    Serving `[]` for versions 1 to 4 would say those versions exclude nothing -- true of the
+    words and false of the rule, since they decide by update type and exclude by omission. The
+    reader on the other side treats an absent key as the older rule and a present one as the
+    outcome rule, so an always-served key would make every retained version look like version 5.
+    """
+    for version in (1, 2, 3, 4):
+        policy = policy_for(version)
+        assert policy is not None
+        assert "excluded_ecosystems" not in landing_conditions_dict(policy), version
+
+    assert landing_conditions_dict(current())["excluded_ecosystems"] == ["github_actions"]
+
+
+def test_version_five_still_serves_update_types_as_a_floor_for_an_older_reader():
+    """EMPTY, PRESENT, and well-typed -- and each of the three is load-bearing.
+
+    The two sides of this contract are different processes that ship separately, so a landing
+    party running the previous build reads these conditions. **Present and well-typed** because
+    that reader parses the whole shape or none of it, and failing to parse refuses every record in
+    both repositories rather than the ones this version is about. **Empty** because such a reader
+    cannot see the rule above and must permit nothing under a version it does not understand.
+
+    It is a floor for that reader and deliberately not a statement that version 5 permits no
+    delta -- which is why the assertion lives beside the one above rather than in place of it.
+    """
+    served = landing_conditions_dict(current())
+
+    assert served["update_types"] == []
+    assert isinstance(served["update_types"], list)
+
+
+def test_version_fives_rationale_records_the_decision_it_rests_on():
+    """The `rationale` is the RECORD, and the only artifact a reader re-deriving this approval in
+    a year will have. Pinned as a citation and a subject, never as prose."""
+    v4, v5 = policy_for(4), policy_for(5)
+    assert v4 is not None and v5 is not None
+    assert "ADR-0036" in v5.landing.rationale
+    assert v5.rationale != v4.rationale
+    assert v5.landing.rationale != v4.landing.rationale
+
+
+def test_a_record_approved_under_version_four_is_re_approved_under_version_five(client, m2m, db):
+    """The expected cost of any version bump, and it is a widening so it lifts by itself.
+
+    The landing binds an approval to the version IN FORCE, so a record stamped 4 is refused there
+    until re-approved. Every held record still conforms -- nothing about the shape a proposal must
+    have moved -- so the producer's next pass re-stamps it and the binding lasts about an hour.
+    """
+    item_id = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()["id"]
+    row = db.get(ChangeItem, item_id)
+    assert row is not None
+    row.policy_version = 4
+    db.commit()
+
+    served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
+    assert served["policy_version"] == 4
+    assert served["landing_policy_version"] == 5
+
+    replay = client.post("/api/deploy-changes", json=conformant(), headers=m2m)
+
+    assert replay.json()["policy_version"] == 5
+    assert replay.json()["policy_objections"] == []
+
+
+def test_a_version_that_decides_on_the_outcome_EXCLUDES_SOMETHING():
+    """An empty excluded set is the maximally permissive shape this schema can express, and it is
+    one dropped element away from a version that means to exclude something.
+
+    Note the asymmetry with the pin one field over, which is deliberate on both sides:
+    `rollout_workflows` treats an absent entry as a REFUSAL, because nobody saying which bytes is
+    not the same as those bytes being fine. Here an empty set is a real value the reader honours as
+    "exclude nothing" -- so the guard against authoring it by accident belongs on this side, where
+    the authoring happens, rather than on the side that must read whatever it is served.
+    """
+    for policy in REGISTRY.values():
+        excluded = policy.landing.excluded_ecosystems
+        if excluded is not None:
+            assert excluded, f"version {policy.version} decides on the outcome and excludes nothing"
+
+
+def test_a_version_cannot_declare_BOTH_rules():
+    """One document, two readers, and this is what stops them being given two answers.
+
+    A landing party that predates the outcome rule enforces `update_types`; one that has learned it
+    ignores that field entirely. A version setting both -- the outcome rule, still capped at minor
+    -- would therefore be enforced by the old reader and ignored by the new one, from the same
+    served bytes. Pinning them mutually exclusive also pins version 5's empty floor, which is
+    otherwise a convention in a comment.
+    """
+    for policy in REGISTRY.values():
+        if policy.landing.excluded_ecosystems is not None:
+            assert policy.landing.update_types == frozenset(), (
+                f"version {policy.version} decides on the outcome and also names update types"
+            )
+        else:
+            assert policy.landing.update_types, (
+                f"version {policy.version} decides by update type and names none"
+            )

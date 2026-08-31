@@ -72,3 +72,36 @@ def test_wontfix_action_via_gui_works_on_blocked(client, db):
     client.post(f"/items/{it.id}/wontfix", headers={"HX-Request": "true"})
     db.refresh(it)
     assert it.status == "wontfix"
+
+
+def _resolved(db):
+    it = _blocked(db)
+    it.status = "resolved"
+    db.commit()
+    return it
+
+
+def test_row_renders_resolved_as_terminal_with_no_action(client, db):
+    it = _resolved(db)
+    r = client.get("/?status=resolved")
+    assert r.status_code == 200
+    assert "TERMINAL" in r.text
+    assert "no further action is available" in r.text.lower()
+    assert f"/items/{it.id}/reactivate" not in r.text
+    assert f"/items/{it.id}/resolve" not in r.text
+    assert f"/items/{it.id}/wontfix" not in r.text
+    assert f"/items/{it.id}/approve" not in r.text
+    assert "<button" not in r.text
+
+
+def test_detail_renders_resolved_as_terminal_with_no_action(client, db):
+    it = _resolved(db)
+    r = client.get(f"/items/{it.id}")
+    assert r.status_code == 200
+    assert "TERMINAL" in r.text
+    assert "no further action is available" in r.text.lower()
+    assert f"/items/{it.id}/reactivate" not in r.text
+    assert f"/items/{it.id}/resolve" not in r.text
+    assert f"/items/{it.id}/wontfix" not in r.text
+    assert "<form" not in r.text
+    assert "<button" not in r.text

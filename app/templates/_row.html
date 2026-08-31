@@ -40,6 +40,10 @@
       <button hx-post="/items/{{ it.id }}/wontfix" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Won't-fix</button>
     {% elif it.status == "wontfix" %}
       <button hx-post="/items/{{ it.id }}/reactivate" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Reactivate</button>
+    {% elif it.status == "resolved" %}
+      {# resolved is terminal by design (2026-08-21 ruling): a decline is reversible,
+         a thing that happened is not. Say so; offer nothing to click. #}
+      <span class="badge">TERMINAL</span> Resolved — no further action is available.
     {% endif %}
     {% if it.status in ["pending", "blocked"] and it.handoff_brief %}
       <button hx-post="/items/{{ it.id }}/handoff" hx-target="#item-{{ it.id }}" hx-swap="outerHTML">Hand off</button>
