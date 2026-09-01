@@ -71,6 +71,29 @@ SEMVER_MAJOR: Final = "semver-major"
 # That is why the spelling is pinned by a test rather than trusted to review.
 GITHUB_ACTIONS: Final = "github_actions"
 
+# The container-image ecosystem, spelled the same way on both sides -- and checked rather than
+# assumed, because the constant above exists precisely because that is not always true.
+# `dependabot.yml` says `docker`, and the branch the update bot opens says `docker` too: read from
+# `dependabot/docker/python-3.14-slim`, the estate's one open image bump, on 2026-08-31.
+#
+# IT SITS ON THE EXCLUDING SIDE, so the failure direction is the unsafe one described above: a
+# member nothing matches excludes nothing, and the landing party then ADMITS exactly the ecosystem
+# this exclusion exists for. Pinned by a test for that reason and not for tidiness.
+DOCKER: Final = "docker"
+
+# The update bot, spelled as `pull_request.user.login` spells it -- and THERE ARE TWO
+# SPELLINGS OF ONE IDENTITY, which is the reason this is a constant rather than a literal.
+# GitHub's REST `pulls/{n}` answers `dependabot[bot]` with `user.type == 'Bot'`; `gh pr view
+# --json author` answers `app/dependabot` for the same pull request, measured on
+# alobarquest/orchestrator#3 on 2026-08-31. The workflow this rule comes from keys on the
+# first (`github.event.pull_request.user.login == 'dependabot[bot]'`), so that is the one
+# declared here.
+#
+# IT SITS ON THE PERMITTING SIDE, so a wrong spelling here under-permits and the lane simply
+# stops landing -- the safe direction, and therefore the one nobody notices. That is the
+# opposite of the exclusions above and is why both are pinned by tests rather than one.
+DEPENDABOT: Final = "dependabot[bot]"
+
 
 @dataclass(frozen=True)
 class WorkflowPin:
@@ -136,6 +159,80 @@ class LandingConditions:
 
 
 @dataclass(frozen=True)
+class InertLanding:
+    """Where landing on the default branch changes NOTHING already serving, and the terms there.
+
+    ADR-0038. The second population this document governs, and the one it was not originally
+    about. `DeployPolicy.repositories` and every term keyed off it belong to the DEPLOYING lane:
+    landing there redeploys production, so a change record, acceptance criteria, a remedy and a
+    rollout pin each have a subject. Here none of them does -- there is no rollout to attest and
+    nothing serving to roll back -- so this block declares a POPULATION and the CONDITIONS ON THE
+    ACT, and nothing else.
+
+    WHY IT IS HERE RATHER THAN IN A SIBLING DOCUMENT. This rule had three readers and no holder:
+    the party that lands, the producer that decides what will not land unattended, and a person.
+    It lived as a GitHub workflow, byte-identical across six repositories, transcribed by hand
+    into a fourth place keyed by blob sha. A sibling document would be the second holder this
+    module's header exists to prevent; a sibling FIELD is one holder with two populations.
+
+    THE TWO POPULATIONS MUST STAY DISJOINT, and a test says so rather than a comment. A repository
+    named by both would be claimed by two landing lanes on different terms, and nothing downstream
+    compares the answers.
+
+    WHAT IS DELIBERATELY NOT A FIELD: no change window, no pace, no acceptance criteria, no
+    rollback plan, no rollout pin. Every one of those is a statement about something already
+    serving, and declaring them empty or false here would record a decision nobody made -- the
+    failure `excluded_ecosystems` omits its key to avoid, one level up. **The fields below are
+    therefore the WHOLE of what this document says about the act for this population**: a landing
+    party may not add a condition this block does not state, and may not drop one it does.
+
+    WHICH IS WHY `permitted_authors` IS A FIELD RATHER THAN A SENTENCE IN THE RATIONALE, and it
+    was nearly the latter. The rule this block moves gated on the author first -- the workflow's
+    own condition is `github.event.pull_request.user.login == 'dependabot[bot]'` -- and leaving
+    that in prose would have left a landing party two readings, neither safe: apply a condition
+    the document does not declare, or drop it. The second is a real fail-open and not a
+    hypothetical one. Four of the six repositories declared below carry a factory caller
+    workflow (measured 2026-08-31), so a FACTORY-opened pull request there with green checks
+    would otherwise be landable by a lane that never asks whether the unit completed, whether the
+    verifier decided its criteria from observed evidence, or whether an authority approval is
+    bound to the envelope. The deploying lane needs no such field because its producer refuses a
+    non-bot pull request upstream, so its subjects are bot-only by construction; this lane has no
+    record and therefore no upstream filter, and the author condition is the only thing bounding
+    which pull requests it ever sees. Version 4 reached the same conclusion about the deploying
+    lane's own gap and put it exactly here: the refusal belongs on the party that reads GitHub,
+    keyed on something this document NAMES.
+
+    THE VERSION A LANDING PARTY ATTRIBUTES A LANDING TO IS THE DOCUMENT'S, NOT THIS BLOCK'S. One
+    `version` covers both populations, so a later version that moves only a rollout pin in the
+    deploying half also re-stamps what an inert landing is attributed to. That follows from one
+    holder and is the right trade; it is recorded because a reader of those attributions will
+    otherwise assume the number tracks the rule it names.
+
+    THIS SERVICE STILL EVALUATES NOTHING, like every other term here. Whether a pull request was
+    opened by the update bot, which ecosystem the second segment of its branch names, whether its
+    required checks passed and whether its head is current with the base all live in GitHub, and
+    the landing party is the one that can read them.
+    """
+
+    repositories: frozenset[str]
+    # WHOSE pull requests. Spelled as `pull_request.user.login` spells it -- see `DEPENDABOT`
+    # above, where two spellings of one identity are why this is a constant. It permits rather
+    # than excludes, so a wrong value under-permits and the lane goes quiet.
+    permitted_authors: frozenset[str]
+    # Spelled as a BRANCH spells it, and read from a real branch rather than from a config file.
+    # See `DOCKER` and `GITHUB_ACTIONS` above: the two vocabularies agree for one and disagree for
+    # the other, and a member nothing matches excludes nothing.
+    excluded_ecosystems: frozenset[str]
+    # A TIGHTENING over the workflow this replaces, which required nothing -- branch protection is
+    # `strict: false` estate-wide, deliberately. It is warranted here for a reason about `main`
+    # rather than about production: a squash of a behind head produces a tree nothing executed,
+    # and `main` is what every build session branches from. It is also what SERIALISES this lane,
+    # which is why no pace condition accompanies it -- see the rationale.
+    require_head_current_with_base: bool
+    rationale: str
+
+
+@dataclass(frozen=True)
 class Rollback:
     steps: tuple[str, ...]
     target: str
@@ -156,6 +253,17 @@ class DeployPolicy:
     acceptance_criteria: Mapping[str, tuple[str, ...]]
     rollback_plans: Mapping[str, Rollback]
     landing: LandingConditions
+    # ADR-0038. The OTHER population and its terms, or None for every version that predates the
+    # question. It defaults to None for the same reason `rollout_workflows` defaults to empty and
+    # `excluded_ecosystems` to None -- so the dataclass can gain a field while every superseded
+    # version below stays readable exactly as it was decided.
+    #
+    # A version declaring none is NOT a version that opened this lane to nobody in particular: it
+    # is one that did not decide the question at all. The landing party must read an absent block
+    # as "this document names no inert population" and land nothing under it, which is the same
+    # fail-closed reading `rollout_workflows` asks for and the opposite of the one an empty
+    # `excluded_ecosystems` would get.
+    inert_landing: InertLanding | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -716,13 +824,197 @@ V5: Final = DeployPolicy(
     landing=_V5_LANDING,
 )
 
+# ---------------------------------------------------------------------------
+# Version 6 -- Devon, 2026-08-31. Versions 1 to 5 above are retained verbatim.
+# ---------------------------------------------------------------------------
+#
+# DECLARES A SECOND POPULATION AND CHANGES NOTHING ABOUT THE FIRST. Both repositories, both
+# criteria pairs, both remedies, both rollout pins, both change classes and every landing
+# condition are the objects version 5 declared -- `landing=_V5_LANDING` is that same object rather
+# than a sixth transcription of one judgment, because version 6 makes no new statement about the
+# deploying lane and a re-transcription would be a second copy of it.
+#
+# ADR-0038, and what it moves is WHERE the rule lives rather than what the rule is. Until now the
+# repositories where landing on the default branch is inert were governed by a GitHub Actions
+# workflow -- one blob, six repositories, arming GitHub's own auto-merge -- and the estate's
+# producer learned what that workflow refuses by importing a hand transcription of it, keyed by
+# blob sha. The workflow is being removed and the orchestrator becomes the merger, which leaves
+# that rule with three readers and no holder: the party that lands, the producer that decides
+# which bumps become factory work, and a person. It is declared here for the reason this module's
+# header gives for everything else in it -- one holder, and the readers ask.
+#
+# WHY THE EXCLUSION IS `docker` HERE AND `github_actions` THERE, WHICH IS ONE PRINCIPLE AND NOT
+# TWO RULES. Version 5 states the principle: exclude where the required checks do not exercise
+# what changed. It reaches a different ecosystem in each population because the two populations
+# fail to exercise different things, and both were measured rather than assumed.
+#
+#   In the DEPLOYING population the rollout job is gated on a push to the default branch and runs
+#   on no pull request at all, visible on every subject as a skipped job beside the passing ones.
+#   So a change to a workflow would be exercised for the first time by the very rollout it is
+#   supposed to gate -- and that is the workflow-automation ecosystem.
+#
+#   In the INERT population there is no rollout job to skip; that is what makes it inert. What
+#   goes unexercised instead is the base IMAGE. Two independent grounds, both from ADR-0023.
+#   DOCKER TAGS ARE NOT SEMVER, so the compatibility promise a version number carries elsewhere is
+#   absent: `python:3.14` is a language version occupying the minor digit, and 3.12 to 3.14
+#   removes standard-library modules. And nothing RUNS the image -- the orchestrator's own gate
+#   does build the real Dockerfile on every pull request, so a dependency with no wheel for the
+#   new interpreter fails there, but no container is started and the suite executes on a
+#   separately pinned interpreter. A package that installs cleanly and fails at import on a
+#   removed module passes every check this estate has. Running the image is what would earn the
+#   permission back.
+#
+#   Neither exclusion is a superset of the other, and neither is a mistake for the other. A
+#   reader arriving at one having read the other should read the principle, not the literal.
+#
+# THE POPULATION IS ALL SIX REPOSITORIES THAT CARRIED THE WORKFLOW, `factory-runner` INCLUDED.
+# Devon ruled it 2026-08-31, and it is the one member that needed ruling: ADR-0015 excluded that
+# repository from the factory on a trust loop -- the runner verifying changes to itself. The
+# reason that does not reach here is that ADR-0015 excluded DISPATCHING work into it, where a
+# coding agent authors the change. This lane lands a change the update bot authored, whose diff is
+# a version number, behind a required check that genuinely gates: of the six repositories declared
+# below, `factory-runner` is the ONLY one carrying `enforce_admins: true`, chosen precisely
+# because a bad merge there stops every dispatch. Different acts, different risks.
+#
+#   BE PRECISE ABOUT THAT CLAIM, because a first draft of this block said `factory-runner` is the
+#   one repository in the ESTATE with `enforce_admins: true`, and that is false: measured
+#   2026-08-31 against the protection API, it is true of `factory-runner`, `change-manager` and
+#   `brain` and false of the other five here. The two extras are the DEPLOYING population this
+#   same document declares, so the wider claim was false about its own other half. The narrower
+#   one is what the argument needs and is what was measured.
+#
+# ADR-0038 records the blast radius as 8 of the 52 landings across the six over the preceding
+# thirty days -- cited from that decision rather than re-measured here. Because the population is
+# a declared list, removing a member later is a one-line version bump.
+#
+# EVERY MEMBER WAS CONFIRMED `inert` BY THE ESTATE'S OWN REGISTRY on 2026-08-31, and the
+# declaration below is not the authority for it. The registry answers a repository-level
+# determination read across all three trigger mechanisms -- every workflow, the repository's
+# webhooks, and the hosting platform's own git integration -- because checking any one surface
+# fails closed in one direction and fail-OPEN in the other. The landing party asks it again at the
+# act and refuses on disagreement, so a repository that quietly starts redeploying stops being
+# landable by this lane rather than being landed wrongly. A human admitting a repository here and
+# the estate observing it are two statements, and both must hold.
+#
+# THE COST OF THE BUMP IS THE ONE EVERY VERSION CARRIES: raising CURRENT_VERSION supersedes every
+# currently-approved record until it is re-approved, because the landing binds an approval to the
+# version in force. This version is purely additive for the deploying lane -- nothing about the
+# shape a proposal must have moved -- so every held record still conforms and the producer
+# re-stamps it on its next hourly pass. Between those two moments nothing lands.
+#
+# WHAT IS GIVEN UP, STATED PLAINLY. The workflow this replaces was GitHub-native and landed even
+# when this estate's own services were down; routine dependency hygiene now depends on them.
+# Devon accepted that explicitly when ruling the direction. What is gained is that default-branch
+# CI switches back on for all six: ADR-0038 records 38 landings by the workflow's arming identity
+# firing ZERO `on: push` runs against 18 by the orchestrator's own merger firing 18. Cited from
+# that decision rather than re-measured here.
+_V6_INERT: Final = InertLanding(
+    repositories=frozenset(
+        {
+            "alobarquest/orchestrator",
+            "alobarquest/intent-packages",
+            "alobarquest/security-standards",
+            "alobarquest/infraops-mcp-server",
+            "alobarquest/project-standards",
+            "alobarquest/factory-runner",
+        }
+    ),
+    permitted_authors=frozenset({DEPENDABOT}),
+    excluded_ecosystems=frozenset({DOCKER}),
+    require_head_current_with_base=True,
+    rationale=(
+        "WHERE LANDING ON THE DEFAULT BRANCH CHANGES NOTHING ALREADY SERVING. A pull request the "
+        "update bot opened against one of these six repositories may be landed unattended when "
+        "its required checks pass, whatever version delta it states or fails to state, except in "
+        "the ecosystems those checks do not exercise. ADR-0038, decided 2026-08-31. This is not a "
+        "new rule: it is the rule a GitHub Actions workflow enforced across these same six "
+        "repositories, moved to the one place its three readers can ask rather than transcribe. "
+        "THE AUTHOR IS A DECLARED CONDITION AND NOT AN ASSUMPTION. The workflow gated on it "
+        "first, and it is the only thing bounding which pull requests this lane sees at all -- "
+        "there is no change record here, so there is no upstream filter of the kind the "
+        "deploying lane gets for free from a producer that refuses a non-bot pull request. Four "
+        "of these six repositories carry a factory caller workflow, so a machine-authored pull "
+        "request with green checks is a real subject rather than a hypothetical one, and this "
+        "lane asks none of the questions the factory's own landing lane asks of one. "
+        "THE EXCLUSION IS `docker`, AND IT IS THE SAME PRINCIPLE THE DEPLOYING LANE APPLIES TO A "
+        "DIFFERENT ECOSYSTEM: exclude where the required checks do not exercise what changed. "
+        "There the rollout job runs on no pull request, so a workflow-automation bump would be "
+        "exercised for the first time by the rollout it is meant to gate. Here there is no "
+        "rollout at all -- that is what makes these repositories inert -- and what goes "
+        "unexercised is the base image. Docker tags are not semver, so a version number promises "
+        "no compatibility, and nothing runs the image: a build of the real Dockerfile is part of "
+        "the checks, but no container is started, so a package that installs cleanly and fails at "
+        "import on a removed standard-library module passes everything. Running the image is what "
+        "would earn the permission back. A reader who has read one exclusion should carry the "
+        "principle across and not the literal; neither is a superset of the other. "
+        "FRESHNESS IS REQUIRED, WHICH IS A TIGHTENING OVER THE WORKFLOW THIS REPLACES, and the "
+        "reason is about the default branch rather than about production: a squash of a behind "
+        "head produces a tree nothing executed, and that branch is what every build session "
+        "branches from and what default-branch CI now runs on. "
+        "NO PACE CONDITION ACCOMPANIES IT, AND THE ABSENCE IS DECIDED RATHER THAN OMITTED. Given "
+        "freshness, a landing stales every sibling, so at most one pull request per repository is "
+        "landable per pass and the rest are freshened for the next one -- freshness serialises "
+        "this lane by itself, and a pace rule would be a second mechanism producing an effect the "
+        "first already produces. The deploying lane does carry one, and the difference is not an "
+        "oversight: there, pace bounds how often something already serving may change, which is a "
+        "fact about production rather than about staleness. There is no change window here for the "
+        "same reason, and no change record: a record exists to carry acceptance criteria and a "
+        "rollback plan for a deploy, and none of the three has a subject in a repository where "
+        "landing deploys nothing. "
+        "WHAT IS GIVEN UP: the workflow this replaces was GitHub-native and landed even when this "
+        "estate's own services were down, and routine dependency hygiene now depends on them. "
+        "What is gained is that default-branch CI runs on these landings again, which it did not "
+        "under the workflow."
+    ),
+)
+
+V6: Final = DeployPolicy(
+    version=6,
+    decided="2026-08-31",
+    rationale=(
+        "Two populations. The first is unchanged in every term from version 5 -- two "
+        "repositories, two change classes, both criteria pairs, both remedies, both rollout pins "
+        "and every condition on the act, which are the objects version 5 declared. What version 6 "
+        "adds is a declaration of the SECOND population: the six repositories where landing on the "
+        "default branch changes nothing already serving, and the conditions on landing there. "
+        "ADR-0038, decided 2026-08-31. "
+        "It moves where a rule lives rather than what the rule is. Those six were governed by a "
+        "GitHub Actions workflow that armed GitHub's own auto-merge, byte-identical across all "
+        "six, and the estate's producer learned what it refuses by importing a hand transcription "
+        "of it. Removing the workflow and making the orchestrator the merger would leave that rule "
+        "with three readers and no holder, so it is declared here, where a human edits it and "
+        "where it is versioned -- and every condition on the act is still evaluated at the moment "
+        "of the act by the party that can read GitHub, exactly as the deploying lane's are. "
+        "The two populations are disjoint and must stay so: a repository named by both would be "
+        "claimed by two lanes on different terms. Nothing keyed on the deploying population "
+        "changes, and a version that quietly widened it while wearing this rationale would fail "
+        "the test that says so."
+    ),
+    repositories=frozenset({"alobarquest/change-manager", "alobarquest/brain"}),
+    change_classes=frozenset({"dependency-update", "factory-delivery"}),
+    risks=frozenset({"caution"}),
+    acceptance_criteria={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_CRITERIA,
+        "alobarquest/brain": _V3_BRAIN_CRITERIA,
+    },
+    rollback_plans={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_ROLLBACK,
+        "alobarquest/brain": _V3_BRAIN_ROLLBACK,
+    },
+    # The SAME OBJECT version 5 declared, not a copy of it. Version 6 makes no new statement about
+    # the deploying lane, and a re-transcription would be a second copy of one judgment -- the
+    # thing the criteria and remedy constants above are shared to avoid.
+    landing=_V5_LANDING,
+    inert_landing=_V6_INERT,
+)
+
 # Every version ever, retained. A record stores the number that approved it, so an approval stays
 # re-evaluable after the policy has moved on.
 REGISTRY: Final[dict[int, DeployPolicy]] = {
-    policy.version: policy for policy in (V1, V2, V3, V4, V5)
+    policy.version: policy for policy in (V1, V2, V3, V4, V5, V6)
 }
 
-CURRENT_VERSION: Final = 5
+CURRENT_VERSION: Final = 6
 
 
 def policy_for(version: int) -> DeployPolicy | None:
@@ -796,4 +1088,61 @@ def landing_conditions_dict(policy: DeployPolicy) -> dict:
     # and false of the rule, since those versions decide by update type and exclude by omission.
     if policy.landing.excluded_ecosystems is not None:
         served["excluded_ecosystems"] = sorted(policy.landing.excluded_ecosystems)
+    return served
+
+
+def inert_landing_dict(policy: DeployPolicy) -> dict | None:
+    """The inert population and its terms, or None for a version that declares none.
+
+    None means the KEY IS OMITTED rather than served empty, for the reason
+    `landing_conditions_dict` omits `excluded_ecosystems` one field over. A block declaring no
+    repositories, nothing excluded and freshness false would tell a reader that versions 1 to 5
+    considered this lane and admitted nobody to it. They considered nothing. An absent key says
+    the version does not decide the question, which is what a landing party must fail closed on --
+    and the two readings differ for exactly the versions that predate the field.
+    """
+    inert = policy.inert_landing
+    if inert is None:
+        return None
+    return {
+        "repositories": sorted(inert.repositories),
+        "permitted_authors": sorted(inert.permitted_authors),
+        "excluded_ecosystems": sorted(inert.excluded_ecosystems),
+        "require_head_current_with_base": inert.require_head_current_with_base,
+        "rationale": inert.rationale,
+    }
+
+
+def policy_dict(policy: DeployPolicy) -> dict:
+    """The served shape of a policy version, built ONCE for both routes that serve it.
+
+    ADR-0038 gave this document a second route, because the party that lands cannot spell the
+    first one -- its architecture guards forbid the bare token that path is spelled with anywhere
+    under its source tree, and its own rule is to reword rather than to widen a guard, which a URL
+    cannot be. The two routes are two PROJECTIONS of one holder, and that is only true while they
+    resolve through the same `current()` and this builder. Two routes composing their own bodies
+    would be the second holder this module's header exists to prevent.
+
+    It is here rather than beside the routes so that the omission below can be asserted over every
+    retained version. A route only ever serves `current()`, so a test through the routes cannot
+    reach a version that declares no inert population -- which is exactly the case the omission is
+    for.
+    """
+    served = {
+        "version": policy.version,
+        "decided": policy.decided,
+        "rationale": policy.rationale,
+        "repositories": sorted(policy.repositories),
+        "change_classes": sorted(policy.change_classes),
+        "risks": sorted(policy.risks),
+        "landing": landing_conditions_dict(policy),
+    }
+    # ADR-0038. THE KEY IS OMITTED BY A VERSION THAT DECLARES NO INERT POPULATION, and its
+    # presence is what tells the landing party it has a second lane at all. The reason an empty
+    # block is the wrong answer is on `inert_landing_dict`; this is where that None becomes an
+    # absent key rather than a null one, because a reader that keys on presence must not be handed
+    # a key whose value it then has to interpret.
+    inert = inert_landing_dict(policy)
+    if inert is not None:
+        served["inert_landing"] = inert
     return served

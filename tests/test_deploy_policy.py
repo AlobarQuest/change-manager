@@ -26,11 +26,15 @@ from app.db import Base
 from app.deploy_changes import POLICY_ACTOR, propose_deploy_change
 from app.deploy_policy import (
     CURRENT_VERSION,
+    DEPENDABOT,
+    DOCKER,
     GITHUB_ACTIONS,
     REGISTRY,
     current,
+    inert_landing_dict,
     landing_conditions_dict,
     objections,
+    policy_dict,
     policy_for,
 )
 from app.models import ChangeEvent, ChangeItem
@@ -410,7 +414,7 @@ def test_the_current_version_pins_the_rollout_workflow_of_every_repository_it_na
     """A repository the policy admits with no pinned workflow is a repository whose criteria
     describe bytes nobody named, which is the hole this version exists to close."""
     policy = current()
-    assert CURRENT_VERSION == 5
+    assert CURRENT_VERSION == 6
     for repository in policy.repositories:
         pin = policy.landing.rollout_workflows.get(repository)
         assert pin is not None, f"{repository} is admitted with no rollout-workflow pin"
@@ -493,7 +497,7 @@ def test_the_two_version_fields_are_not_the_same_question(client, m2m, db):
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 1
-    assert served["landing_policy_version"] == CURRENT_VERSION == 5
+    assert served["landing_policy_version"] == CURRENT_VERSION == 6
 
 
 def test_a_drift_record_carries_no_landing_conditions(client, m2m, db):
@@ -786,11 +790,11 @@ def test_a_record_approved_under_version_two_is_bound_until_it_is_re_approved(cl
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 2
-    assert served["landing_policy_version"] == 5
+    assert served["landing_policy_version"] == 6
 
     replay = client.post("/api/deploy-changes", json=conformant(), headers=m2m)
 
-    assert replay.json()["policy_version"] == 5
+    assert replay.json()["policy_version"] == 6
 
 
 def test_version_three_did_not_widen_what_may_land():
@@ -1062,7 +1066,10 @@ def test_version_five_changes_what_decides_and_nothing_else():
     """
     v4, v5 = policy_for(4), policy_for(5)
     assert v4 is not None and v5 is not None
-    assert v5 is current()
+    # `v5 is current()` stood here until version 6 superseded it. The claim moved rather than
+    # lapsed: `test_version_six_declares_a_second_population_and_changes_nothing_about_the_first`
+    # anchors `current()`, and these tests chain version to version back to version 1, so
+    # anchoring the newest anchors every one of them.
 
     assert v5.repositories == v4.repositories
     assert v5.change_classes == v4.change_classes
@@ -1152,12 +1159,19 @@ def test_version_fives_rationale_records_the_decision_it_rests_on():
     assert v5.landing.rationale != v4.landing.rationale
 
 
-def test_a_record_approved_under_version_four_is_re_approved_under_version_five(client, m2m, db):
+def test_a_record_approved_under_version_four_is_re_approved_under_the_version_in_force(
+    client, m2m, db
+):
     """The expected cost of any version bump, and it is a widening so it lifts by itself.
 
     The landing binds an approval to the version IN FORCE, so a record stamped 4 is refused there
     until re-approved. Every held record still conforms -- nothing about the shape a proposal must
     have moved -- so the producer's next pass re-stamps it and the binding lasts about an hour.
+
+    Named for the version in force rather than for a number, because the property is what every
+    bump costs and not what version 5 cost. Version 6 pays it again for the same reason: it adds
+    a second population and moves no term a record must satisfy, so every held record still
+    conforms and is re-stamped rather than stranded.
     """
     item_id = client.post("/api/deploy-changes", json=conformant(), headers=m2m).json()["id"]
     row = db.get(ChangeItem, item_id)
@@ -1167,11 +1181,11 @@ def test_a_record_approved_under_version_four_is_re_approved_under_version_five(
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 4
-    assert served["landing_policy_version"] == 5
+    assert served["landing_policy_version"] == CURRENT_VERSION
 
     replay = client.post("/api/deploy-changes", json=conformant(), headers=m2m)
 
-    assert replay.json()["policy_version"] == 5
+    assert replay.json()["policy_version"] == CURRENT_VERSION
     assert replay.json()["policy_objections"] == []
 
 
@@ -1209,3 +1223,307 @@ def test_a_version_cannot_declare_BOTH_rules():
             assert policy.landing.update_types, (
                 f"version {policy.version} decides by update type and names none"
             )
+
+
+# ---------------------------------------------------------------------------
+# Version 6 -- the inert population declared beside the deploying one (ADR-0038).
+# ---------------------------------------------------------------------------
+
+
+def test_version_six_declares_a_second_population_and_changes_nothing_about_the_first():
+    """The version's whole claim, asserted term by term against the one it supersedes.
+
+    ADR-0038 adds a block and touches nothing keyed on the deploying population. A version that
+    quietly widened a repository, a class, a risk, a criterion, a remedy, a pin or a condition on
+    the deploying act while wearing this version's rationale would fail here.
+    """
+    v5, v6 = policy_for(5), policy_for(6)
+    assert v5 is not None and v6 is not None
+    assert v6 is current()
+
+    assert v6.repositories == v5.repositories
+    assert v6.change_classes == v5.change_classes
+    assert v6.risks == v5.risks
+    assert v6.acceptance_criteria == v5.acceptance_criteria
+    assert v6.rollback_plans == v5.rollback_plans
+
+    # The SAME OBJECT, not an equal one. Version 6 makes no new statement about the deploying
+    # lane, so a re-transcription of its conditions would be a second copy of one judgment -- and
+    # identity is the only assertion that catches a copy which happens to agree today.
+    assert v6.landing is v5.landing
+
+    # The one thing that moves.
+    assert v5.inert_landing is None
+    assert v6.inert_landing is not None
+
+
+def test_the_two_populations_are_disjoint():
+    """A repository named by both would be claimed by two landing lanes on different terms.
+
+    Nothing downstream compares the two answers, so the one that ran is whichever lane looked
+    first -- and they differ in whether a change record, acceptance criteria, a rollback plan and
+    a change window are required. Stated over EVERY version rather than the current one, because a
+    later version widening either set is exactly how the overlap would arrive.
+    """
+    for policy in REGISTRY.values():
+        inert = policy.inert_landing
+        if inert is None:
+            continue
+        overlap = policy.repositories & inert.repositories
+        assert not overlap, f"version {policy.version} names {sorted(overlap)} in both populations"
+
+
+def test_the_inert_population_is_the_six_that_carried_the_rule():
+    """The population is a DECLARED LIST, which is what makes removing a member a version bump.
+
+    `factory-runner` is the member that needed a ruling and is therefore the member worth pinning
+    by name: ADR-0015 excluded it from the factory on a trust loop, and ADR-0038 part 1a records
+    why that does not reach a lane which lands an update bot's version-number diff behind the one
+    required check in this estate that admins cannot bypass.
+    """
+    inert = current().inert_landing
+    assert inert is not None
+    assert inert.repositories == frozenset(
+        {
+            "alobarquest/orchestrator",
+            "alobarquest/intent-packages",
+            "alobarquest/security-standards",
+            "alobarquest/infraops-mcp-server",
+            "alobarquest/project-standards",
+            "alobarquest/factory-runner",
+        }
+    )
+    assert "alobarquest/factory-runner" in inert.repositories
+
+
+def test_the_inert_exclusion_is_docker_and_the_deploying_one_is_not():
+    """One principle, two populations, two literals -- and the pair is the assertion.
+
+    Asserting `docker` alone would pass just as well if somebody had copied the deploying lane's
+    exclusion across, which is the mistake a reader arriving at one having read the other is most
+    likely to make: exclude where the required checks do not exercise what changed, and the two
+    populations fail to exercise different things. Pinning them DIFFERENT is what states that.
+
+    The spelling is the second segment of the branch the update bot opens, read from a real
+    branch (`dependabot/docker/python-3.14-slim`) rather than from a config file. It sits on the
+    EXCLUDING side, so a member nothing matches excludes nothing and the landing party admits
+    exactly the ecosystem this exists for -- the unsafe direction, which is why a test holds it.
+    """
+    policy = current()
+    assert policy.inert_landing is not None
+
+    assert DOCKER == "docker"
+    assert policy.inert_landing.excluded_ecosystems == frozenset({"docker"})
+    assert policy.landing.excluded_ecosystems == frozenset({"github_actions"})
+    assert policy.inert_landing.excluded_ecosystems != policy.landing.excluded_ecosystems
+
+
+def test_the_inert_lane_permits_the_update_bot_and_nobody_else():
+    """The condition the workflow gated on FIRST, and the only thing bounding this lane's subjects.
+
+    It is a field rather than a sentence in the rationale because the two readings of a
+    prose-only condition are "apply something the document does not declare" and "drop it", and
+    the second is a live fail-open: four of the six repositories declared here carry a factory
+    caller workflow, so a machine-authored pull request with green checks is a real subject. This
+    lane asks none of the questions the factory's own landing lane asks of one -- whether the unit
+    completed, whether the verifier decided its criteria from observed evidence, whether an
+    authority approval is bound to the envelope.
+
+    Asserted as an EXACT set rather than as membership: `DEPENDABOT in permitted_authors` is
+    satisfied by a version that permits everybody, which is the shape this exists to refuse.
+
+    The spelling is `pull_request.user.login`'s and not `gh pr view --json author`'s, which
+    answers `app/dependabot` for the same pull request. It permits rather than excludes, so a
+    wrong value under-permits and the lane goes quiet -- the direction nobody notices, which is
+    why a test holds it.
+    """
+    inert = current().inert_landing
+    assert inert is not None
+
+    assert DEPENDABOT == "dependabot[bot]"
+    assert inert.permitted_authors == frozenset({"dependabot[bot]"})
+
+
+def test_a_declared_inert_population_PERMITS_SOMEBODY_AND_NOT_EVERYBODY():
+    """Both directions, because the two failures are opposite and only one is loud.
+
+    An empty author set makes the lane land nothing, which somebody notices within a day. A set
+    this schema cannot bound -- the failure a later author reaching for "any bot" would produce --
+    lands anything, quietly. Stated over every version that declares a block, since a later
+    version widening it is how either arrives.
+    """
+    for policy in REGISTRY.values():
+        inert = policy.inert_landing
+        if inert is None:
+            continue
+        assert inert.permitted_authors, f"version {policy.version} permits no author"
+        assert inert.permitted_authors <= frozenset({DEPENDABOT}), (
+            f"version {policy.version} permits an author nobody decided: "
+            f"{sorted(inert.permitted_authors - {DEPENDABOT})}"
+        )
+
+
+def test_the_inert_lane_requires_freshness():
+    """A TIGHTENING over the workflow this replaces, which required nothing.
+
+    Branch protection is `strict: false` estate-wide and deliberately so, so nothing else asks
+    this. It is also what serialises the lane, which is why no pace condition accompanies it --
+    and the absence of one is asserted below rather than left to the rationale.
+    """
+    inert = current().inert_landing
+    assert inert is not None
+    assert inert.require_head_current_with_base is True
+
+
+def test_the_inert_block_declares_nothing_the_deploying_lane_owns():
+    """The fields ARE the whole of what this document says about the act for this population.
+
+    A landing party may not add a condition this block does not state and may not drop one it
+    does, so the field set is the contract. Acceptance criteria, a remedy, a rollout pin, a change
+    window and a pace are every one of them a statement about something already serving, and this
+    population has nothing serving -- declaring any of them, even as empty or false, would record
+    a decision nobody made. Stated as a field-set equality so that ADDING one is what fails,
+    which is the direction a later increment would drift in.
+    """
+    from dataclasses import fields
+
+    inert = current().inert_landing
+    assert inert is not None
+    assert {f.name for f in fields(inert)} == {
+        "repositories",
+        "permitted_authors",
+        "excluded_ecosystems",
+        "require_head_current_with_base",
+        "rationale",
+    }
+
+
+def test_every_superseded_version_declares_no_inert_population():
+    """The editing contract, asserted over the field version 6 adds rather than only in prose.
+
+    An approval stamped 1 to 5 was granted by a document that said nothing about a second
+    population. If any of them acquired one, looking that version up would report a decision
+    nobody made -- and because the landing party keys WHETHER IT HAS A LANE AT ALL on this field's
+    presence, the edit would not merely misdescribe the past, it would open a lane under a version
+    that never had one.
+    """
+    for version in (1, 2, 3, 4, 5):
+        policy = policy_for(version)
+        assert policy is not None
+        assert policy.inert_landing is None, version
+
+
+def test_a_version_that_declares_no_inert_population_OMITS_the_key():
+    """Presence is what tells the landing party it has a second lane, so absence has to be real.
+
+    Serving an empty block for versions 1 to 5 would say those versions considered this lane and
+    admitted nobody to it. They considered nothing. The reader must fail closed on an absent key,
+    and an always-served block would make every retained version look like version 6 with an empty
+    population -- a different statement, reached by a different decision, that nobody made.
+    """
+    for version in (1, 2, 3, 4, 5):
+        policy = policy_for(version)
+        assert policy is not None
+        assert inert_landing_dict(policy) is None, version
+
+    assert inert_landing_dict(current()) is not None
+
+
+def test_a_declared_inert_population_IS_NOT_EMPTY():
+    """An empty population is one dropped element away from a block that means to admit somebody.
+
+    The guard belongs on this side, where the authoring happens, rather than on the side that must
+    read whatever it is served -- the same asymmetry `excluded_ecosystems` carries one field over.
+    An empty exclusion set is refused for the mirror-image reason: it is the maximally permissive
+    shape this schema can express, and here it would admit the base-image ecosystem the whole
+    block exists to hold out.
+    """
+    for policy in REGISTRY.values():
+        inert = policy.inert_landing
+        if inert is None:
+            continue
+        assert inert.repositories, f"version {policy.version} declares an empty inert population"
+        assert inert.excluded_ecosystems, f"version {policy.version} excludes nothing"
+
+
+def test_version_sixs_rationale_records_the_decision_it_rests_on():
+    """The `rationale` is the RECORD, and the only artifact a reader re-deriving this in a year
+    will have. Pinned as a citation and as the two subjects it must not lose."""
+    v5, v6 = policy_for(5), policy_for(6)
+    assert v5 is not None and v6 is not None
+    assert v6.inert_landing is not None
+
+    assert "ADR-0038" in v6.rationale
+    assert "ADR-0038" in v6.inert_landing.rationale
+    assert v6.rationale != v5.rationale
+
+    # The two subjects a later edit is most likely to drop, because each answers a question a
+    # reader will otherwise re-litigate: why this ecosystem and not the other one, and why there
+    # is no pace condition beside a freshness condition.
+    assert "docker" in v6.inert_landing.rationale
+    assert "pace" in v6.inert_landing.rationale
+
+
+def test_the_served_body_omits_the_inert_block_for_a_version_that_declares_none():
+    """The omission asserted where it is REACHABLE, which is not through either route.
+
+    A route only ever serves `current()`, so no test through HTTP can reach a version that
+    declares no inert population -- and that is precisely the case the omission exists for. The
+    branch would therefore be unkillable if this were tested only at the routes: a mutation
+    serving the key unconditionally would pass everything, while a later version that dropped the
+    block would start telling every reader it had a lane with nobody in it.
+
+    That is why `policy_dict` is in the policy module rather than beside the routes.
+    """
+    for version in (1, 2, 3, 4, 5):
+        policy = policy_for(version)
+        assert policy is not None
+        assert "inert_landing" not in policy_dict(policy), version
+
+    assert "inert_landing" in policy_dict(current())
+
+
+def test_the_policy_route_serves_the_inert_population(client, m2m):
+    declared = current().inert_landing
+    assert declared is not None
+    body = client.get("/api/deploy-policy", headers=m2m).json()
+    assert body["version"] == CURRENT_VERSION
+    assert body["inert_landing"]["permitted_authors"] == ["dependabot[bot]"]
+    assert body["inert_landing"]["excluded_ecosystems"] == ["docker"]
+    assert body["inert_landing"]["require_head_current_with_base"] is True
+
+    # THE RATIONALE REACHES THE WIRE, which nothing asserted until adversarial review mutated it
+    # to the empty string and watched the whole suite pass. It is the only artifact a reader
+    # re-deriving this in a year has, and a served block that lost it would still carry every
+    # term -- so the omission is invisible in exactly the direction that matters.
+    assert body["inert_landing"]["rationale"] == declared.rationale
+    assert "ADR-0038" in body["inert_landing"]["rationale"]
+    assert "alobarquest/factory-runner" in body["inert_landing"]["repositories"]
+    assert len(body["inert_landing"]["repositories"]) == 6
+
+    # The deploying half of the same response, unchanged and beside it -- so a change that served
+    # the new block by displacing the old one fails here rather than in production.
+    assert body["repositories"] == ["alobarquest/brain", "alobarquest/change-manager"]
+    assert body["landing"]["excluded_ecosystems"] == ["github_actions"]
+
+
+def test_both_policy_routes_serve_the_same_document(client, m2m):
+    """TWO PROJECTIONS OF ONE HOLDER, and this is the assertion that keeps it true.
+
+    ADR-0038. The second path exists because the party that lands cannot spell the first -- its
+    architecture guards forbid the bare token that path is spelled with, and its own rule is to
+    reword rather than to widen a guard, which a URL cannot be. Two routes composing their own
+    bodies would be the second holder ADR-0038 rejected, so they share `current()` and one
+    builder, and equality here is what a drift between them would fail.
+    """
+    a = client.get("/api/deploy-policy", headers=m2m)
+    b = client.get("/api/landing-policy", headers=m2m)
+
+    assert a.status_code == 200
+    assert b.status_code == 200
+    assert a.json() == b.json()
+    assert b.json()["inert_landing"]["excluded_ecosystems"] == ["docker"]
+
+
+def test_the_second_policy_route_requires_a_credential(client):
+    assert client.get("/api/landing-policy").status_code == 401
