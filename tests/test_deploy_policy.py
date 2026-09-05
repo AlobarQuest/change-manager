@@ -29,6 +29,7 @@ from app.deploy_policy import (
     DEPENDABOT,
     DOCKER,
     GITHUB_ACTIONS,
+    OCTO_UPSTREAM_SYNC,
     REGISTRY,
     current,
     inert_landing_dict,
@@ -414,7 +415,7 @@ def test_the_current_version_pins_the_rollout_workflow_of_every_repository_it_na
     """A repository the policy admits with no pinned workflow is a repository whose criteria
     describe bytes nobody named, which is the hole this version exists to close."""
     policy = current()
-    assert CURRENT_VERSION == 6
+    assert CURRENT_VERSION == 7
     for repository in policy.repositories:
         pin = policy.landing.rollout_workflows.get(repository)
         assert pin is not None, f"{repository} is admitted with no rollout-workflow pin"
@@ -497,7 +498,7 @@ def test_the_two_version_fields_are_not_the_same_question(client, m2m, db):
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 1
-    assert served["landing_policy_version"] == CURRENT_VERSION == 6
+    assert served["landing_policy_version"] == CURRENT_VERSION == 7
 
 
 def test_a_drift_record_carries_no_landing_conditions(client, m2m, db):
@@ -790,11 +791,11 @@ def test_a_record_approved_under_version_two_is_bound_until_it_is_re_approved(cl
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 2
-    assert served["landing_policy_version"] == 6
+    assert served["landing_policy_version"] == 7
 
     replay = client.post("/api/deploy-changes", json=conformant(), headers=m2m)
 
-    assert replay.json()["policy_version"] == 6
+    assert replay.json()["policy_version"] == 7
 
 
 def test_version_three_did_not_widen_what_may_land():
@@ -1239,7 +1240,9 @@ def test_version_six_declares_a_second_population_and_changes_nothing_about_the_
     """
     v5, v6 = policy_for(5), policy_for(6)
     assert v5 is not None and v6 is not None
-    assert v6 is current()
+    # NOT `v6 is current()` since 2026-09-05. This test's subject is what version 6 claimed about
+    # version 5, and that claim is retained and still true after version 7 superseded it. Tying it
+    # to whatever happens to be current made it fail on a version it says nothing about.
 
     assert v6.repositories == v5.repositories
     assert v6.change_classes == v5.change_classes
@@ -1281,7 +1284,9 @@ def test_the_inert_population_is_the_six_that_carried_the_rule():
     why that does not reach a lane which lands an update bot's version-number diff behind the one
     required check in this estate that admins cannot bypass.
     """
-    inert = current().inert_landing
+    six = policy_for(6)
+    assert six is not None
+    inert = six.inert_landing
     assert inert is not None
     assert inert.repositories == frozenset(
         {
@@ -1341,7 +1346,10 @@ def test_the_inert_lane_permits_the_update_bot_and_nobody_else():
     assert inert is not None
 
     assert DEPENDABOT == "dependabot[bot]"
-    assert inert.permitted_authors == frozenset({"dependabot[bot]"})
+    # TWO since version 7, and still an EXACT set for the reason above. The second is the App
+    # that opens both forks' upstream-sync pull requests; the version-7 rationale records why it
+    # is that App and not `github-actions[bot]`, whose name would admit any workflow's output.
+    assert inert.permitted_authors == frozenset({"dependabot[bot]", "octo-upstream-sync[bot]"})
 
 
 def test_a_declared_inert_population_PERMITS_SOMEBODY_AND_NOT_EVERYBODY():
@@ -1357,9 +1365,17 @@ def test_a_declared_inert_population_PERMITS_SOMEBODY_AND_NOT_EVERYBODY():
         if inert is None:
             continue
         assert inert.permitted_authors, f"version {policy.version} permits no author"
-        assert inert.permitted_authors <= frozenset({DEPENDABOT}), (
+        # WIDENING THIS SET IS HOW AN AUTHOR IS DECIDED, which is why the guard is stated over
+        # every version rather than over the current one. `octo-upstream-sync[bot]` was added on
+        # 2026-09-05: the App that opens both forks' upstream-sync pull requests, installed on
+        # those two repositories and nowhere else. Deliberately NOT `github-actions[bot]`, which
+        # is the identity of ANY workflow in a repository -- permitting it would grant this lane
+        # to every workflow-authored pull request there, which is precisely the "any bot" shape
+        # this assertion exists to refuse.
+        decided = frozenset({DEPENDABOT, OCTO_UPSTREAM_SYNC})
+        assert inert.permitted_authors <= decided, (
             f"version {policy.version} permits an author nobody decided: "
-            f"{sorted(inert.permitted_authors - {DEPENDABOT})}"
+            f"{sorted(inert.permitted_authors - decided)}"
         )
 
 
@@ -1395,6 +1411,11 @@ def test_the_inert_block_declares_nothing_the_deploying_lane_owns():
         "excluded_ecosystems",
         "require_head_current_with_base",
         "rationale",
+        # ADR-0041, added in version 7. It states a condition on the ACT for this population --
+        # which subjects the ecosystem bound is about at all -- so it belongs to the contract this
+        # equality holds. It EXEMPTS rather than bounds, which is why it defaults and why the
+        # served projection omits it when empty.
+        "non_ecosystem_authors",
     }
 
 
@@ -1488,7 +1509,11 @@ def test_the_policy_route_serves_the_inert_population(client, m2m):
     assert declared is not None
     body = client.get("/api/deploy-policy", headers=m2m).json()
     assert body["version"] == CURRENT_VERSION
-    assert body["inert_landing"]["permitted_authors"] == ["dependabot[bot]"]
+    assert body["inert_landing"]["permitted_authors"] == [
+        "dependabot[bot]",
+        "octo-upstream-sync[bot]",
+    ]
+    assert body["inert_landing"]["non_ecosystem_authors"] == ["octo-upstream-sync[bot]"]
     assert body["inert_landing"]["excluded_ecosystems"] == ["docker"]
     assert body["inert_landing"]["require_head_current_with_base"] is True
 
@@ -1499,7 +1524,9 @@ def test_the_policy_route_serves_the_inert_population(client, m2m):
     assert body["inert_landing"]["rationale"] == declared.rationale
     assert "ADR-0038" in body["inert_landing"]["rationale"]
     assert "alobarquest/factory-runner" in body["inert_landing"]["repositories"]
-    assert len(body["inert_landing"]["repositories"]) == 6
+    assert len(body["inert_landing"]["repositories"]) == 8
+    assert "alobarquest/rtk" in body["inert_landing"]["repositories"]
+    assert "alobarquest/claude-octopus" in body["inert_landing"]["repositories"]
 
     # The deploying half of the same response, unchanged and beside it -- so a change that served
     # the new block by displacing the old one fails here rather than in production.
@@ -1527,3 +1554,58 @@ def test_both_policy_routes_serve_the_same_document(client, m2m):
 
 def test_the_second_policy_route_requires_a_credential(client):
     assert client.get("/api/landing-policy").status_code == 401
+
+
+def test_version_seven_widens_only_the_inert_population():
+    """Version 7's whole claim, asserted term by term against the one it supersedes.
+
+    Two repositories and one author added to the INERT lane, one new condition on the act there,
+    and nothing keyed on the deploying population touched. A version that quietly widened a
+    repository, a class, a risk, a criterion, a remedy or a condition on the deploying act while
+    wearing this version's rationale would fail here — the same guard version 6 carries.
+    """
+    v6, v7 = policy_for(6), policy_for(7)
+    assert v6 is not None and v7 is not None
+    assert v7 is current()
+
+    assert v7.repositories == v6.repositories
+    assert v7.change_classes == v6.change_classes
+    assert v7.risks == v6.risks
+    assert v7.acceptance_criteria == v6.acceptance_criteria
+    assert v7.rollback_plans == v6.rollback_plans
+    # The SAME OBJECT, not an equal one — version 7 makes no new statement about the deploying
+    # lane, and identity is the only assertion that catches a copy which happens to agree today.
+    assert v7.landing is v6.landing
+
+    six, eight = v6.inert_landing, v7.inert_landing
+    assert six is not None and eight is not None
+    assert eight.repositories == six.repositories | {
+        "alobarquest/rtk",
+        "alobarquest/claude-octopus",
+    }
+    assert eight.permitted_authors == six.permitted_authors | {OCTO_UPSTREAM_SYNC}
+    assert eight.excluded_ecosystems == six.excluded_ecosystems
+    assert eight.require_head_current_with_base == six.require_head_current_with_base
+
+
+def test_the_exemption_names_the_sync_app_and_never_the_update_bot():
+    """The bound the ecosystem exclusion places on Dependabot is untouched, which is the half a
+    widening would quietly lose. Exempting the update bot would switch that bound off for the
+    population this lane was built for."""
+    inert = current().inert_landing
+    assert inert is not None
+    assert inert.non_ecosystem_authors == frozenset({OCTO_UPSTREAM_SYNC})
+    assert DEPENDABOT not in inert.non_ecosystem_authors
+    # And every exempted author must be one the lane permits at all — an exemption for an author
+    # this lane never sees would be a permission nobody could exercise and nobody decided.
+    assert inert.non_ecosystem_authors <= inert.permitted_authors
+
+
+def test_a_retained_version_serves_the_bytes_it_always_served():
+    """ADR-0041's field is OMITTED when empty, so version 6's projection did not shift under a
+    field it never decided. A record approved under 6 stays re-evaluable against what 6 said."""
+    six = policy_for(6)
+    assert six is not None
+    served = inert_landing_dict(six)
+    assert served is not None
+    assert "non_ecosystem_authors" not in served
