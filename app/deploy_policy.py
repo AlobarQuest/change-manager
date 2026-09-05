@@ -94,6 +94,14 @@ DOCKER: Final = "docker"
 # opposite of the exclusions above and is why both are pinned by tests rather than one.
 DEPENDABOT: Final = "dependabot[bot]"
 
+# The App that authors both forks' upstream-sync pull requests, in the REST spelling -- which is
+# what the landing party compares against. `gh` answers `app/octo-upstream-sync` for the same
+# account, and that is NOT this string. App id 4094707, installed on the two forks and nowhere
+# else. Chosen over `github-actions[bot]` on 2026-09-05 precisely because this list permits by
+# NAME: `github-actions[bot]` is the identity of ANY workflow in a repository, so declaring it
+# would grant this lane to every workflow-authored pull request there rather than to the sync.
+OCTO_UPSTREAM_SYNC: Final = "octo-upstream-sync[bot]"
+
 
 @dataclass(frozen=True)
 class WorkflowPin:
@@ -230,6 +238,18 @@ class InertLanding:
     # which is why no pace condition accompanies it -- see the rationale.
     require_head_current_with_base: bool
     rationale: str
+
+    # ADR-0041 (orchestrator). The permitted authors whose pull requests are NOT ecosystem-scoped.
+    # An upstream sync is somebody else's release wholesale, not a dependency bump, so "which
+    # package ecosystem" is the wrong question rather than one its branch failed to answer -- and
+    # the landing party refused such a subject `landing_ecosystem_unreadable` until that ADR.
+    #
+    # DEFAULTED HERE AND OPTIONAL THERE, deliberately and for the same reason. Every other field in
+    # this block BOUNDS what may land, so an absent one is a permission nobody granted. This one
+    # EXEMPTS: empty means nobody is exempt, means every subject must produce a readable ecosystem,
+    # which is the behaviour before the field existed. `inert_landing_dict` therefore omits the key
+    # when it is empty, so version 6 serves exactly the bytes it always served.
+    non_ecosystem_authors: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -1008,13 +1028,88 @@ V6: Final = DeployPolicy(
     inert_landing=_V6_INERT,
 )
 
+# ---------------------------------------------------------------------------
+# Version 7 -- Devon, 2026-09-05.
+# ---------------------------------------------------------------------------
+
+_V7_INERT: Final = InertLanding(
+    repositories=frozenset(
+        {
+            "alobarquest/orchestrator",
+            "alobarquest/intent-packages",
+            "alobarquest/security-standards",
+            "alobarquest/infraops-mcp-server",
+            "alobarquest/project-standards",
+            "alobarquest/factory-runner",
+            # The two forks, added 2026-09-05. Both answer `landing: "inert"` in App Brain --
+            # rtk determined 2026-09-02, claude-octopus 2026-08-02 -- so landing on their default
+            # branches changes nothing already serving, which is this population's whole criterion.
+            "alobarquest/rtk",
+            "alobarquest/claude-octopus",
+        }
+    ),
+    permitted_authors=frozenset({DEPENDABOT, OCTO_UPSTREAM_SYNC}),
+    excluded_ecosystems=frozenset({DOCKER}),
+    require_head_current_with_base=True,
+    non_ecosystem_authors=frozenset({OCTO_UPSTREAM_SYNC}),
+    rationale=(
+        "The same rule ADR-0038 declared, over two more repositories and one more author. "
+        "Both forks carry a daily "
+        "workflow that syncs an upstream release, reviews it, hardens it and opens ONE rolling "
+        "pull request -- and until 2026-09-05 nothing landed it. rtk's sat open from 2026-06-29 "
+        "while its contents were refreshed daily; the operator was six minor versions behind the "
+        "release his own lane had already reviewed. "
+        "WHAT MADE THEM ADMISSIBLE IS NOT THIS VERSION. Both were repositories where a pull "
+        "request read `mergeable_state: CLEAN` only because NOTHING COULD FAIL -- rtk had one "
+        "workflow, the sync itself, and neither fork had a required status check. Each now has a "
+        "gate that reports on every pull request and is required on `main`: rtk's `build and "
+        "test` builds and tests the merged tree, claude-octopus's `hardening and syntax` runs the "
+        "hardener's own self-test and parses every file that becomes a hook on the operator's "
+        "machine. Those are what `CLEAN` now means there, and this version rests on them. "
+        "THE AUTHOR IS `octo-upstream-sync[bot]` AND NOT `github-actions[bot]`, which is a choice "
+        "and not a detail. rtk's sync authenticated as `GITHUB_TOKEN` until 2026-09-05, so its "
+        "author was the identity of ANY workflow in that repository; permitting it would have "
+        "granted this lane to every workflow-authored pull request there. The sync now mints a "
+        "token from an App installed on the two forks and nowhere else. "
+        "AN UPSTREAM SYNC IS NOT A BUMP, which is why it is named in `non_ecosystem_authors`. It "
+        "states no version delta and belongs to no package ecosystem, so the ecosystem exclusion "
+        "has no purchase on it -- asking is the wrong question rather than one it failed to "
+        "answer. ADR-0041 (orchestrator) decided that the exemption is DECLARED here rather than "
+        "inferred from a branch name, because inferring it would let any branch name switch the "
+        "ecosystem bound off. Dependabot keeps that bound in every term. "
+        "The deploying population and every term keyed off it are the objects version 5 declared "
+        "and version 6 carried, unchanged. The two populations remain disjoint."
+    ),
+)
+
+V7: Final = DeployPolicy(
+    version=7,
+    decided="2026-09-05",
+    rationale=(
+        "Version 6's two populations, with the inert one widened by two repositories and one "
+        "author, and one new term on the act. Nothing about the deploying lane changes: it is the "
+        "same objects, and the test that says the populations stay disjoint still says so. "
+        "The widening is the end of a lane that produced reviewed, hardened pull requests for "
+        "months and landed none of them."
+    ),
+    repositories=V6.repositories,
+    change_classes=V6.change_classes,
+    risks=V6.risks,
+    acceptance_criteria=V6.acceptance_criteria,
+    rollback_plans=V6.rollback_plans,
+    # The SAME OBJECT versions 5 and 6 declared, not a copy: version 7 makes no new statement
+    # about the deploying lane.
+    landing=_V5_LANDING,
+    inert_landing=_V7_INERT,
+)
+
 # Every version ever, retained. A record stores the number that approved it, so an approval stays
 # re-evaluable after the policy has moved on.
 REGISTRY: Final[dict[int, DeployPolicy]] = {
-    policy.version: policy for policy in (V1, V2, V3, V4, V5, V6)
+    policy.version: policy for policy in (V1, V2, V3, V4, V5, V6, V7)
 }
 
-CURRENT_VERSION: Final = 6
+CURRENT_VERSION: Final = 7
 
 
 def policy_for(version: int) -> DeployPolicy | None:
@@ -1104,13 +1199,19 @@ def inert_landing_dict(policy: DeployPolicy) -> dict | None:
     inert = policy.inert_landing
     if inert is None:
         return None
-    return {
+    served_inert: dict = {
         "repositories": sorted(inert.repositories),
         "permitted_authors": sorted(inert.permitted_authors),
         "excluded_ecosystems": sorted(inert.excluded_ecosystems),
         "require_head_current_with_base": inert.require_head_current_with_base,
         "rationale": inert.rationale,
     }
+    # OMITTED WHEN EMPTY, so a version that declares no exemption serves the bytes it always
+    # served. The reader treats absent and empty alike (ADR-0041), so this costs nothing and keeps
+    # version 6's projection unchanged by a field it never decided.
+    if inert.non_ecosystem_authors:
+        served_inert["non_ecosystem_authors"] = sorted(inert.non_ecosystem_authors)
+    return served_inert
 
 
 def policy_dict(policy: DeployPolicy) -> dict:
