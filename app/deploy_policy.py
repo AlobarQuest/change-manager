@@ -1103,13 +1103,101 @@ V7: Final = DeployPolicy(
     inert_landing=_V7_INERT,
 )
 
+# brain#62, 2026-09-07. The SECOND criterion moved and the first did not: the rollout still
+# concludes at the same job and step, and what a green run now attests is strictly more. The
+# workflow reads `deployments[0].deployment_uuid` out of each trigger response and fails the step
+# when it is absent, so a 2xx that queued nothing no longer counts as a trigger; and it asks
+# Coolify for that deployment's status before each revision poll, so an explicit `failed` fails
+# the run in about forty seconds rather than at the 600-second deadline.
+#
+# RATIFIED RATHER THAN TRANSCRIBED, which is the whole point of this constant existing separately
+# from version 3's. The producer derives this text from the workflow's bytes; a human reading the
+# diff decides whether the remedy pinned beside it is still the right remedy. It is: the rollback
+# is unchanged, because failing earlier and failing on a fact that was previously invisible do not
+# change how production is put back.
+_V8_BRAIN_CRITERIA: Final = (
+    "the rollout runs for this merge on alobarquest/brain, and its production step concludes "
+    "success (job 'deploy', step 'Deploy brain apps')",
+    "every brain application this rollout triggered answered /api/health reporting the merged "
+    "commit as its revision and a status of ok, within 600 seconds, and Coolify named a "
+    "deployment for each one it was asked to deploy; a trigger whose 2xx response names no "
+    "deployment fails the rollout rather than counting as queued, and a deployment Coolify "
+    "itself reports as failed fails the run at once rather than at the deadline; an application "
+    "whose Coolify UUID secret is unset is neither triggered nor checked, and a rollout that "
+    "triggered none fails rather than passing empty",
+)
+
+
+# THE SAME TERMS ON THE ACT VERSION 5 DECIDED, with one repository's rollout re-pinned. The two
+# halves move together or not at all: the criteria above describe the bytes at `7cf6ca2d`, and a
+# pin left on `c5c08871` would refuse at the act every record those criteria approve -- which is
+# the state this version exists to end, and which held brain's queue from 2026-09-07.
+#
+# change-manager's pin is the SAME OBJECT version 5 declared rather than a copy: nothing about
+# that repository's rollout has moved, and re-transcribing it would be a second copy of one
+# judgment.
+_V8_LANDING: Final = LandingConditions(
+    update_types=_V5_LANDING.update_types,
+    require_head_current_with_base=_V5_LANDING.require_head_current_with_base,
+    excluded_ecosystems=_V5_LANDING.excluded_ecosystems,
+    rationale=(
+        _V5_LANDING.rationale + " VERSION 8 RE-PINS BRAIN'S ROLLOUT at `7cf6ca2d`, the "
+        "revision that fails a trigger naming no deployment and fails at once on a deployment "
+        "Coolify reports as failed. Nothing else about the act changes."
+    ),
+    rollout_workflows={
+        "alobarquest/change-manager": _V5_LANDING.rollout_workflows["alobarquest/change-manager"],
+        "alobarquest/brain": WorkflowPin(
+            path=".github/workflows/ci.yml",
+            # `brain#62`, 2026-09-07 -- supersedes `c5c088719`, which versions 3 to 7 pinned.
+            blob_sha="7cf6ca2d2a508b1643cdb5ac0d5390357f397d54",
+        ),
+    },
+)
+
+
+V8: Final = DeployPolicy(
+    version=8,
+    decided="2026-09-16",
+    rationale=(
+        "Version 7's populations and terms, with brain's rollout workflow re-pinned and the "
+        "criteria it attests re-ratified. Nothing is widened: the same two repositories, the "
+        "same two change classes, the same risk, the same remedies, the same conditions on the "
+        "act. "
+        "WHY IT EXISTS. brain#62 changed what a green rollout of that repository proves, so the "
+        "producer began deriving criteria that no version had ratified and every brain record "
+        "stopped being approved -- three green pull requests waited from 2026-09-10 for a human "
+        "to read the diff. That is the mechanism working: a rollout workflow changing under a "
+        "standing approval is the one thing this policy notices, and the remedy it asks for is "
+        "exactly this bump. "
+        "WHAT WAS READ BEFORE RATIFYING. The new bytes attest strictly more than the old: a "
+        "trigger whose 2xx names no deployment now fails, and a deployment Coolify reports as "
+        "failed now fails the run at once instead of at the deadline. The revision poll that "
+        "version 3 admitted brain for is unchanged and remains the authority on success, so the "
+        "guarantee the rollback plan attaches to has not moved -- which is why the remedy is "
+        "version 3's, unedited."
+    ),
+    repositories=V7.repositories,
+    change_classes=V7.change_classes,
+    risks=V7.risks,
+    acceptance_criteria={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_CRITERIA,
+        "alobarquest/brain": _V8_BRAIN_CRITERIA,
+    },
+    rollback_plans=V7.rollback_plans,
+    landing=_V8_LANDING,
+    # The SAME OBJECT version 7 declared: this version makes no statement about the inert lane.
+    inert_landing=V7.inert_landing,
+)
+
+
 # Every version ever, retained. A record stores the number that approved it, so an approval stays
 # re-evaluable after the policy has moved on.
 REGISTRY: Final[dict[int, DeployPolicy]] = {
-    policy.version: policy for policy in (V1, V2, V3, V4, V5, V6, V7)
+    policy.version: policy for policy in (V1, V2, V3, V4, V5, V6, V7, V8)
 }
 
-CURRENT_VERSION: Final = 7
+CURRENT_VERSION: Final = 8
 
 
 def policy_for(version: int) -> DeployPolicy | None:
