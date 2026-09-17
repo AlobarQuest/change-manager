@@ -415,7 +415,7 @@ def test_the_current_version_pins_the_rollout_workflow_of_every_repository_it_na
     """A repository the policy admits with no pinned workflow is a repository whose criteria
     describe bytes nobody named, which is the hole this version exists to close."""
     policy = current()
-    assert CURRENT_VERSION == 7
+    assert CURRENT_VERSION == 8
     for repository in policy.repositories:
         pin = policy.landing.rollout_workflows.get(repository)
         assert pin is not None, f"{repository} is admitted with no rollout-workflow pin"
@@ -445,7 +445,7 @@ def test_the_route_serves_the_pin_so_the_landing_party_holds_no_copy(client, m2m
     assert landing["rollout_workflows"] == {
         "alobarquest/brain": {
             "path": ".github/workflows/ci.yml",
-            "blob_sha": "c5c088719cd340f0071b875c6a82439292ed8756",
+            "blob_sha": "7cf6ca2d2a508b1643cdb5ac0d5390357f397d54",
         },
         "alobarquest/change-manager": {
             "path": ".github/workflows/deploy.yml",
@@ -498,7 +498,7 @@ def test_the_two_version_fields_are_not_the_same_question(client, m2m, db):
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 1
-    assert served["landing_policy_version"] == CURRENT_VERSION == 7
+    assert served["landing_policy_version"] == CURRENT_VERSION == 8
 
 
 def test_a_drift_record_carries_no_landing_conditions(client, m2m, db):
@@ -631,6 +631,11 @@ CHANGE_MANAGER = "alobarquest/change-manager"
 # not join. Kept as a literal so the pin below is asserted against the thing it must not be.
 _BRAIN_ROLLOUT_BEFORE_THE_REVISION_POLL = "6cad4cf9f03d816ce8bf8fb87fa67d8634486ef1"
 
+# The revision versions 3 to 7 pinned: it polls /api/health for the merged commit, and it treats a
+# trigger's 2xx as a queued deployment. Kept as a literal for the same reason as the one above --
+# version 8's pin is asserted against the thing it supersedes, not merely against a string.
+_BRAIN_ROLLOUT_BEFORE_THE_DEPLOYMENT_ID_CHECK = "c5c088719cd340f0071b875c6a82439292ed8756"
+
 
 def brain_conformant(**overrides) -> dict:
     """A brain proposal as the producer derives one, built from the policy it must match."""
@@ -717,9 +722,12 @@ def test_brains_criteria_are_the_pair_the_producer_derives_for_this_workflow_rev
         "the rollout runs for this merge on alobarquest/brain, and its production step "
         "concludes success (job 'deploy', step 'Deploy brain apps')",
         "every brain application this rollout triggered answered /api/health reporting the "
-        "merged commit as its revision and a status of ok, within 600 seconds; an application "
-        "whose Coolify UUID secret is unset is neither triggered nor checked, and a rollout "
-        "that triggered none fails rather than passing empty",
+        "merged commit as its revision and a status of ok, within 600 seconds, and Coolify "
+        "named a deployment for each one it was asked to deploy; a trigger whose 2xx response "
+        "names no deployment fails the rollout rather than counting as queued, and a deployment "
+        "Coolify itself reports as failed fails the run at once rather than at the deadline; an "
+        "application whose Coolify UUID secret is unset is neither triggered nor checked, and a "
+        "rollout that triggered none fails rather than passing empty",
     )
 
 
@@ -744,9 +752,25 @@ def test_brains_pin_names_the_workflow_that_verifies_the_revision():
     """
     pin = current().landing.rollout_workflows[BRAIN]
     assert pin.path == ".github/workflows/ci.yml"
-    assert pin.blob_sha == "c5c088719cd340f0071b875c6a82439292ed8756"
+    assert pin.blob_sha == "7cf6ca2d2a508b1643cdb5ac0d5390357f397d54"
     assert pin.blob_sha != _BRAIN_ROLLOUT_BEFORE_THE_REVISION_POLL
+    assert pin.blob_sha != _BRAIN_ROLLOUT_BEFORE_THE_DEPLOYMENT_ID_CHECK
     assert pin != current().landing.rollout_workflows[CHANGE_MANAGER]
+
+
+def test_version_seven_keeps_the_pin_and_criteria_it_ratified():
+    """The editing contract over the version this one supersedes, and the control that makes the
+    two assertions above mean something. A record approved under version 7 was approved against
+    `c5c08871`'s bytes and version 3's text; re-pinning brain must leave both readable exactly as
+    they were, or re-evaluating that approval answers about a judgment nobody made."""
+    v7 = policy_for(7)
+    assert v7 is not None
+    assert (
+        v7.landing.rollout_workflows[BRAIN].blob_sha
+        == _BRAIN_ROLLOUT_BEFORE_THE_DEPLOYMENT_ID_CHECK
+    )
+    assert v7.acceptance_criteria[BRAIN] != current().acceptance_criteria[BRAIN]
+    assert all("Coolify named a deployment" not in c for c in v7.acceptance_criteria[BRAIN])
 
 
 def test_a_brain_proposal_conforms_and_is_approved_by_the_server(client, m2m, db):
@@ -791,11 +815,11 @@ def test_a_record_approved_under_version_two_is_bound_until_it_is_re_approved(cl
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 2
-    assert served["landing_policy_version"] == 7
+    assert served["landing_policy_version"] == 8
 
     replay = client.post("/api/deploy-changes", json=conformant(), headers=m2m)
 
-    assert replay.json()["policy_version"] == 7
+    assert replay.json()["policy_version"] == 8
 
 
 def test_version_three_did_not_widen_what_may_land():
@@ -1566,7 +1590,9 @@ def test_version_seven_widens_only_the_inert_population():
     """
     v6, v7 = policy_for(6), policy_for(7)
     assert v6 is not None and v7 is not None
-    assert v7 is current()
+    # NOT `v7 is current()` since 2026-09-16, for the reason version 6 carries one test up. This
+    # test's subject is what version 7 claimed about version 6, and that claim is retained and
+    # still true after version 8 superseded it.
 
     assert v7.repositories == v6.repositories
     assert v7.change_classes == v6.change_classes
@@ -1586,6 +1612,40 @@ def test_version_seven_widens_only_the_inert_population():
     assert eight.permitted_authors == six.permitted_authors | {OCTO_UPSTREAM_SYNC}
     assert eight.excluded_ecosystems == six.excluded_ecosystems
     assert eight.require_head_current_with_base == six.require_head_current_with_base
+
+
+def test_version_eight_re_pins_only_brains_rollout():
+    """Version 8's whole claim, asserted term by term against the one it supersedes.
+
+    One repository's rollout pin moved, and the criteria those bytes attest were re-ratified with
+    it. A version that quietly widened a repository, a class, a risk, a remedy, a condition on the
+    act or the inert population while wearing this version's rationale would fail here — the same
+    guard versions 6 and 7 carry.
+    """
+    v7, v8 = policy_for(7), policy_for(8)
+    assert v7 is not None and v8 is not None
+    assert v8 is current()
+
+    assert v8.repositories == v7.repositories
+    assert v8.change_classes == v7.change_classes
+    assert v8.risks == v7.risks
+    assert v8.rollback_plans == v7.rollback_plans
+    # The SAME OBJECT — version 8 makes no statement about the inert lane.
+    assert v8.inert_landing is v7.inert_landing
+
+    # The two things that move, and they move only for brain. change-manager's criteria and pin
+    # are the same objects, which is the assertion that catches a copy agreeing by coincidence.
+    assert v8.acceptance_criteria[CHANGE_MANAGER] is v7.acceptance_criteria[CHANGE_MANAGER]
+    assert v8.acceptance_criteria[BRAIN] != v7.acceptance_criteria[BRAIN]
+    assert (
+        v8.landing.rollout_workflows[CHANGE_MANAGER] is v7.landing.rollout_workflows[CHANGE_MANAGER]
+    )
+    assert v8.landing.rollout_workflows[BRAIN] != v7.landing.rollout_workflows[BRAIN]
+
+    # Every other condition on the act is version 5's, unedited.
+    assert v8.landing.update_types == v7.landing.update_types
+    assert v8.landing.excluded_ecosystems == v7.landing.excluded_ecosystems
+    assert v8.landing.require_head_current_with_base == v7.landing.require_head_current_with_base
 
 
 def test_the_exemption_names_the_sync_app_and_never_the_update_bot():
