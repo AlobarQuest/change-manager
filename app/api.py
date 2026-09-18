@@ -102,6 +102,10 @@ def _item_dict(it: ChangeItem) -> dict:
         "package_id": it.package_id,
         "package_revision": it.package_revision,
         "package_source_repository": it.package_source_repository,
+        # The signal->work contract, clause C1: which observation caused this record. On
+        # BOTH proposed sources rather than on the work lane alone, and served here because
+        # the carry cannot read back what it proposed otherwise. Null on every derived item.
+        "originating_observation_id": it.originating_observation_id,
         # ADR-0019 increment 5b. What the CURRENT policy requires of the act, carried beside the
         # record the act would be about. `GET /api/deploy-policy` serves the same thing standing
         # alone and is the surface a person reads; this is the surface the landing party reads,

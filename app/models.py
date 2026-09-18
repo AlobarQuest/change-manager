@@ -94,6 +94,15 @@ class ChangeItem(Base):
     package_id: Mapped[str | None] = mapped_column(String)
     package_revision: Mapped[int | None] = mapped_column(Integer)
     package_source_repository: Mapped[str | None] = mapped_column(String)
+    # WHICH OBSERVATION CAUSED THIS RECORD (the signal->work contract, clause C1). Written
+    # at proposal by both proposed ingresses and by nothing else; null on every derived
+    # item, and null on every record proposed before the contract existed.
+    #
+    # NO FOREIGN KEY, and none is available: the observation is a row in the orchestrator's
+    # database, which this service cannot see. Null therefore means "nothing recorded a
+    # cause" and never "no cause exists" -- the reading `policy_version` above already
+    # carries. The orchestrator owns that table and refuses an unknown id at its own door.
+    originating_observation_id: Mapped[str | None] = mapped_column(String)
 
     @property
     def package_subject(self) -> tuple[str, int, str] | None:
