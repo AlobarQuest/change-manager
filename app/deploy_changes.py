@@ -74,6 +74,20 @@ _DERIVED_FIELDS = (
     "rollback_plan",
 )
 
+# `originating_observation_id` IS IN NEITHER TUPLE, and it belongs to neither.
+#
+# Not ASSERTED: `change_proposer` replays every record it has proposed on every hourly pass,
+# and every record proposed before the column existed stores null, so comparing it would 409
+# the whole standing population forever. That is the same wedge the split above closed for
+# the derived facts, reached by a different route, and here there is no route back either.
+#
+# Not DERIVED: a cause is not a fact about the world that this ingress re-reads. Refreshing
+# it would retro-fit a cause onto a record proposed before the contract, which is precisely
+# what the contract's own no-back-fill rule forbids.
+#
+# So it is written once at construction and never again. A producer that named the wrong
+# cause cannot correct it; that cost is stated at greater length in `app/work_changes.py`,
+# where the same decision is made for the same reason.
 _PROPOSED_FIELDS = _ASSERTED_FIELDS + _DERIVED_FIELDS
 
 # The statuses the policy may move, enumerated as what it MAY change rather than what it
@@ -299,6 +313,9 @@ def propose_deploy_change(db: Session, body: DeployChangeIn) -> tuple[ChangeItem
         plan={},
         first_seen_at=now,
         last_seen_at=now,
+        # Written explicitly: `_proposed` selects `_PROPOSED_FIELDS` out of the body, so a
+        # field in neither tuple is dropped rather than stored. See those tuples' comment.
+        originating_observation_id=body.originating_observation_id,
         **proposed,
     )
     db.add(item)

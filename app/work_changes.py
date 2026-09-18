@@ -21,11 +21,14 @@ production Coolify tools, and its own filter is a denylist, so a source it preda
 default. Withholding it server-side is what makes that safe, rather than a hope about a
 program in another repository.
 
-**There is no producer.** ADR-0026 says so outright -- the thing that reads a refusal and
-concludes what package would fix it is a diagnosis step, and none exists or is specced. Today
-this route's callers are an operator and the tests, which is where `POST /api/deploy-changes`
-began too, before increment 5a gave it one. Recording that plainly is better than a comment
-implying a caller that is not there.
+**THE PRODUCER IS `bump_proposer`, AND THIS PARAGRAPH USED TO SAY THERE WAS NONE.** ADR-0026
+recorded that the thing which reads a refusal and concludes what package would fix it did not
+exist, and that was true when it was written; ADR-0028 built it. The orchestrator's
+`bump_proposer` runs on a schedule, proposes a record per outstanding dependency bump, and
+REPLAYS every record it has already proposed on every pass. That is what makes the replay
+rules below load-bearing rather than theoretical, and it is why a field added to
+`_ASSERTED_FIELDS` is a decision about every record already in the database. An operator and
+the tests are still callers; they stopped being the only ones.
 """
 
 from datetime import UTC, datetime
@@ -55,6 +58,28 @@ WORK_KIND = "work_proposal"
 # is. Note `package_id`/`package_revision`/`package_source_repository` are asserted too even
 # though they are in the identity -- the identity is case-folded, so two proposals differing
 # only in the case of a stored value share a key and must not silently overwrite each other.
+#
+# `originating_observation_id` IS ALSO ABSENT, FOR A DIFFERENT REASON THAN `actor`, AND THE
+# DIFFERENCE IS THE WHOLE DECISION. `actor` is excluded because it is not about the work.
+# The originating observation IS about the work -- it is the cause the signal->work contract
+# requires the record to name -- and it is excluded because of what this tuple DOES.
+#
+# This tuple feeds exactly two things: the construction payload below, and the field-by-field
+# comparison in `_existing` that decides replay from `WorkChangeConflict`. It does NOT
+# re-assert anything onto an existing record -- `_existing` returns the row unmutated and
+# `propose_work_change` returns it untouched, so there is no write path a repeat proposal can
+# reach. (The deploy sibling DOES have one, over its `_DERIVED_FIELDS`; this lane has no
+# derived facts and therefore no refresh.) So the only consequence of adding a field here is
+# the comparison, and for this field that consequence is permanent: every record proposed
+# before the column existed stores null, `bump_proposer` replays all of them on every pass,
+# and a null-versus-id comparison would 409 each one forever -- which its caller classifies
+# as a refusal, i.e. a finding, on every pass, with no repair route. A work record is
+# write-once, its status is a human's alone, and no supersede route exists.
+#
+# THE COST, STATED PLAINLY BECAUSE IT IS REAL: a producer that named the wrong cause cannot
+# correct it. A re-proposal naming a different observation answers 200 and the first cause
+# stands. That is the same silence a differing `actor` already gets, and it is the side of the
+# trade that does not wedge a scheduled producer permanently.
 _ASSERTED_FIELDS = (
     "package_id",
     "package_revision",
@@ -119,6 +144,10 @@ def propose_work_change(db: Session, body: WorkChangeIn) -> tuple[ChangeItem, bo
         plan={},
         first_seen_at=now,
         last_seen_at=now,
+        # Written explicitly because it is deliberately NOT in `_ASSERTED_FIELDS`, which is
+        # also the construction payload -- see that tuple's comment. It is set once, here,
+        # and no path updates it afterwards.
+        originating_observation_id=body.originating_observation_id,
         **proposed,
     )
     db.add(item)

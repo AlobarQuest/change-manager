@@ -32,6 +32,36 @@ def _required_text(value: str, field: str) -> str:
     return text
 
 
+# A canonical UUID, which is what an orchestrator observation id is. A shape check ("36
+# characters", "has hyphens in the right places") is not enough here for `_REPOSITORY`'s
+# reason one screen up: `{3f2504e0-...}`, `urn:uuid:3f2504e0-...` and the hyphen-free form
+# are three spellings of ONE id, each stored as a different string, and a later increment
+# builds a database lookup out of this value. `uuid.UUID()` accepts all three, which is why
+# this is a match and not a parse.
+_OBSERVATION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+def _observation_id(value: str | None) -> str | None:
+    """Strip, and refuse anything that is not a canonical observation id.
+
+    `None` is an ordinary answer and is NOT the same as a present-but-blank value: a record
+    proposed before this contract existed names no cause, while `""` is a producer that
+    believes it is naming one. The second goes through `_required_text` like every other text
+    field on these models.
+
+    LOWERCASE ONLY, deliberately. The orchestrator serialises `str(uuid)`, which is always
+    lowercase, so an uppercase value is one no producer emits -- and accepting it would store
+    two spellings of one id. Refusing is the treatment `package_revision` already gets from
+    `strict=True`: fail loudly at the door rather than quietly downstream.
+    """
+    if value is None:
+        return None
+    text = _required_text(value, "originating_observation_id")
+    if not _OBSERVATION_ID.fullmatch(text):
+        raise ValueError("originating_observation_id must be a canonical lowercase UUID")
+    return text
+
+
 class TargetIn(BaseModel):
     provider: str | None = None
     resource_type: str | None = None
@@ -135,6 +165,15 @@ class DeployChangeIn(BaseModel):
     rollback_plan: RollbackPlanIn
     actor: str  # caller-declared; see the attribution note in the ADR-0019 plan
     note: str | None = None
+    # WHICH OBSERVATION CAUSED THIS PROPOSAL, by observation id (the signal->work contract,
+    # clause C1). change-manager stores it without verifying it, for this model's own stated
+    # reason: it has no egress and cannot ask whether the observation exists, exactly as it
+    # cannot ask whether the pull request it names does. It can and does check the SHAPE.
+    #
+    # Optional, because the population predates it: every record proposed before this column
+    # existed carries null, and its producer replays it on every pass. Null means "nothing
+    # recorded a cause" and never "no cause exists".
+    originating_observation_id: str | None = None
 
     @field_validator("target_repository")
     @classmethod
@@ -153,6 +192,11 @@ class DeployChangeIn(BaseModel):
     @classmethod
     def _criteria_are_not_blank(cls, v: list[str]) -> list[str]:
         return [_required_text(c, "acceptance_criteria[]") for c in v]
+
+    @field_validator("originating_observation_id")
+    @classmethod
+    def _canonical_observation_id(cls, v: str | None) -> str | None:
+        return _observation_id(v)
 
 
 class WorkChangeIn(BaseModel):
@@ -186,6 +230,15 @@ class WorkChangeIn(BaseModel):
     reasoning: str
     actor: str  # caller-declared; see the attribution note in the ADR-0019 plan
     note: str | None = None
+    # WHICH OBSERVATION CAUSED THIS PROPOSAL, by observation id (the signal->work contract,
+    # clause C1). change-manager stores it without verifying it, for this model's own stated
+    # reason: it has no egress and cannot ask whether the observation exists, exactly as it
+    # cannot ask whether the package it names does. It can and does check the SHAPE.
+    #
+    # Optional, because the population predates it: every record proposed before this column
+    # existed carries null, and its producer replays it on every pass. Null means "nothing
+    # recorded a cause" and never "no cause exists".
+    originating_observation_id: str | None = None
 
     @field_validator("package_source_repository")
     @classmethod
@@ -199,6 +252,11 @@ class WorkChangeIn(BaseModel):
     @classmethod
     def _not_blank(cls, v: str, info) -> str:
         return _required_text(v, info.field_name)
+
+    @field_validator("originating_observation_id")
+    @classmethod
+    def _canonical_observation_id(cls, v: str | None) -> str | None:
+        return _observation_id(v)
 
 
 class DeployRetirementIn(BaseModel):
