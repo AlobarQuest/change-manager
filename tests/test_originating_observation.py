@@ -345,14 +345,31 @@ def test_the_column_arrives_on_upgrade_and_leaves_on_downgrade() -> None:
     assert {"package_id", "package_revision", "package_source_repository"} <= after_downgrade
 
 
-def test_the_model_and_the_migrated_schema_agree() -> None:
-    """A column on the model that no migration creates is a production-only failure.
+def test_the_model_and_the_migrated_schema_carry_the_same_columns() -> None:
+    """The ORM model and `alembic upgrade head` agree, in BOTH directions.
 
-    Every other test in this file runs against `Base.metadata.create_all`, which cannot see a
-    missing migration; `entrypoint.sh` migrates.
+    Every other test in this file runs against `Base.metadata.create_all`, which is built from
+    the model and so cannot see a migration nobody wrote; `entrypoint.sh` migrates. The
+    direction that bites is silent -- the model grows a field, every test here passes, and the
+    deployed database has no column to put it in.
+
+    This test used to read `inspect(ChangeItem).columns` alone and assert the new name was in
+    it. That is the create_all side its own docstring said could not see the problem: it would
+    have passed with the migration file deleted.
     """
     from sqlalchemy import inspect
 
     from app.models import ChangeItem
 
-    assert "originating_observation_id" in {c.name for c in inspect(ChangeItem).columns}
+    with tempfile.TemporaryDirectory() as d:
+        db = os.path.join(d, "m.db")
+        out = _alembic(db, "upgrade", "head")
+        assert out.returncode == 0, out.stderr
+        migrated = _columns(db)
+
+    model = {c.name for c in inspect(ChangeItem).columns}
+
+    assert "originating_observation_id" in model & migrated
+    assert model == migrated, (
+        f"model-only: {sorted(model - migrated)}; migrated-only: {sorted(migrated - model)}"
+    )
