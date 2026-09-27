@@ -1,0 +1,40 @@
+{
+  "policy_version": 8,
+  "repositories": {
+    "alobarquest/brain": {
+      "acceptance_criteria": [
+        "the rollout runs for this merge on alobarquest/brain, and its production step concludes success (job 'deploy', step 'Deploy brain apps')",
+        "every brain application this rollout triggered answered /api/health reporting the merged commit as its revision and a status of ok, within 600 seconds, and Coolify named a deployment for each one it was asked to deploy; a trigger whose 2xx response names no deployment fails the rollout rather than counting as queued, and a deployment Coolify itself reports as failed fails the run at once rather than at the deadline; an application whose Coolify UUID secret is unset is neither triggered nor checked, and a rollout that triggered none fails rather than passing empty"
+      ],
+      "rollback_plan": {
+        "steps": [
+          "re-point each affected app's moving image tag at the previous per-SHA tag and redeploy",
+          "revert the merge commit on main, so main and production agree again"
+        ],
+        "target": "image"
+      },
+      "rollout_workflow": {
+        "blob_sha": "7cf6ca2d2a508b1643cdb5ac0d5390357f397d54",
+        "path": ".github/workflows/ci.yml"
+      }
+    },
+    "alobarquest/change-manager": {
+      "acceptance_criteria": [
+        "the rollout runs for this merge on alobarquest/change-manager, and its production step concludes success (job 'build-and-deploy', step 'Trigger Coolify redeploy')",
+        "production answered /api/health reporting the merged commit as its revision within 600 seconds"
+      ],
+      "rollback_plan": {
+        "steps": [
+          "re-point the moving image tag at the previous per-SHA tag and redeploy",
+          "revert the merge commit on main, so main and production agree again"
+        ],
+        "target": "image"
+      },
+      "rollout_workflow": {
+        "blob_sha": "a47d4b187c93971a5b5915ce87a963bd4ef35e30",
+        "path": ".github/workflows/deploy.yml"
+      }
+    }
+  },
+  "schema_version": 1
+}
