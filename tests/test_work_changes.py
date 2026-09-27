@@ -292,6 +292,33 @@ def test_an_identical_proposal_replays(client: TestClient, m2m: dict[str, str]) 
     assert first.json()["id"] == second.json()["id"]
 
 
+def test_a_proposal_replayed_onto_a_record_a_human_declined_leaves_the_decline_standing(
+    client: TestClient, m2m: dict[str, str], db: Session
+) -> None:
+    """Pre-work recovery: rejection is a human decision the producer cannot undo.
+
+    The producer proposes the same bump every pass while the update bot keeps its pull request
+    open, so a declined record receives the identical proposal again. It must answer 200 -- a
+    replay, not a refusal, so the producer's pass is not a finding -- and it must leave `wontfix`
+    exactly where the human put it. A NEW bump is a new package revision and therefore a new record;
+    that, not this replay, is how the world re-raises a condition that was declined.
+    """
+    first = _propose(client, m2m)
+    item = db.get(ChangeItem, first.json()["id"])
+    assert item is not None
+    item.status = "wontfix"
+    item.decided_by = "devon"
+    db.commit()
+
+    second = _propose(client, m2m)
+
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
+    assert second.json()["status"] == "wontfix"
+    db.refresh(item)
+    assert item.status == "wontfix" and item.decided_by == "devon"
+
+
 def test_a_different_proposal_for_the_same_revision_is_refused(
     client: TestClient, m2m: dict[str, str]
 ) -> None:
