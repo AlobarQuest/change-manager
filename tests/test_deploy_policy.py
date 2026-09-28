@@ -707,9 +707,15 @@ def test_brains_criteria_are_the_pair_the_producer_derives_for_this_workflow_rev
 
     `objections` byte-compares a record's stored criteria against this tuple, and a record's
     stored criteria are what the orchestrator's `change_proposer.criteria.acceptance_criteria`
-    derived from its transcription of the blob pinned below. The same literal is asserted there,
-    in `tests/change_proposer/test_change_proposer.py`. They drift, and every brain record objects
-    `acceptance_criteria_not_ratified` forever with nothing anywhere saying which side moved.
+    derived from its transcription of the blob pinned below. They drift, and every brain record
+    objects `acceptance_criteria_not_ratified` forever with nothing anywhere saying which side
+    moved -- which happened: until 2026-09-27 this docstring said "the same literal is asserted
+    there", and the orchestrator's copy was version 3's text while this one was version 8's.
+
+    What joins the two sides now is `contracts/ratified_rollout_policy.json`, generated from
+    `current()` and held to it by `tests/test_ratified_rollout_policy.py`. The orchestrator reads
+    that file as data at this repository's `main` and compares it with what it derives
+    (`scripts/check_rollout_policy_ratification.py` there), on every pull request.
 
     A literal rather than a property assertion for exactly that reason: a substring check leaves
     most of the string free to move silently, and a mutation of the wording proved it does. This
@@ -734,7 +740,8 @@ def test_brains_criteria_are_the_pair_the_producer_derives_for_this_workflow_rev
 def test_brains_rollback_plan_is_the_one_the_producer_transcribes():
     """The same cross-repo pair, one field over, and it fails the same silent way: `rollback_plan`
     is compared byte-for-byte too, so a remedy improved on one side alone stops every brain record
-    conforming. The orchestrator's copy is `change_proposer.criteria._ROLLBACKS`."""
+    conforming. The orchestrator's copy is `change_proposer.criteria._ROLLBACKS`, compared with
+    this one through `contracts/ratified_rollout_policy.json` like the criteria above."""
     assert current().rollback_plans[BRAIN].as_stored() == {
         "steps": [
             "re-point each affected app's moving image tag at the previous per-SHA tag "

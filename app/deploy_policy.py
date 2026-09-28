@@ -42,6 +42,7 @@ this estate documents and it is its inverse: it fails closed in both directions,
 so a change on one side must be ratified against the other.
 """
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Final
@@ -1335,3 +1336,44 @@ def policy_dict(policy: DeployPolicy) -> dict:
     if inert is not None:
         served["inert_landing"] = inert
     return served
+
+
+# The committed projection below, for a party that must compare against it and may not run this
+# module. The orchestrator derives a record's acceptance criteria and rollback plan, and
+# `objections` compares them byte for byte against the CURRENT version; before this existed the
+# two sides each pinned a literal of their own, and on 2026-09-27 those literals were two versions
+# apart with both suites green. The other side reads the JSON as DATA over the contents API --
+# it never imports or executes this file -- so the projection is committed rather than computed
+# on request, and `tests/test_ratified_rollout_policy.py` holds the committed bytes to this
+# function so the file cannot drift from the code.
+RATIFIED_ROLLOUT_POLICY_PATH: Final = "contracts/ratified_rollout_policy.json"
+RATIFIED_ROLLOUT_SCHEMA_VERSION: Final = 1
+
+
+def ratified_rollout_dict(policy: DeployPolicy) -> dict:
+    """What a record for each ratified repository must carry under `policy`, and the rollout pin.
+
+    Keyed by repository. A repository with ratified criteria but no rollout pin cannot occur in a
+    version this module accepts, and is refused here rather than projected as a pin-less entry a
+    reader might take for a waiver.
+    """
+    repositories: dict = {}
+    for repository, criteria in sorted(policy.acceptance_criteria.items()):
+        pin = policy.landing.rollout_workflows.get(repository)
+        if pin is None:
+            raise ValueError(f"{repository} has ratified criteria and no rollout pin")
+        repositories[repository] = {
+            "rollout_workflow": {"path": pin.path, "blob_sha": pin.blob_sha},
+            "acceptance_criteria": list(criteria),
+            "rollback_plan": policy.rollback_plans[repository].as_stored(),
+        }
+    return {
+        "schema_version": RATIFIED_ROLLOUT_SCHEMA_VERSION,
+        "policy_version": policy.version,
+        "repositories": repositories,
+    }
+
+
+def render_ratified_rollout_policy(policy: DeployPolicy) -> str:
+    """The exact bytes committed at RATIFIED_ROLLOUT_POLICY_PATH: sorted keys, two-space indent."""
+    return json.dumps(ratified_rollout_dict(policy), indent=2, sort_keys=True) + "\n"
