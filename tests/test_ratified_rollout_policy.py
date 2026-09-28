@@ -14,11 +14,11 @@ import pytest
 
 from app.deploy_policy import (
     RATIFIED_ROLLOUT_POLICY_PATH,
-    REGISTRY,
     current,
     ratified_rollout_dict,
     render_ratified_rollout_policy,
 )
+from app.deploy_policy_history import REGISTRY
 
 COMMITTED = Path(__file__).resolve().parent.parent / RATIFIED_ROLLOUT_POLICY_PATH
 

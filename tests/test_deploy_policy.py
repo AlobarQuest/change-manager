@@ -30,14 +30,13 @@ from app.deploy_policy import (
     DOCKER,
     GITHUB_ACTIONS,
     OCTO_UPSTREAM_SYNC,
-    REGISTRY,
     current,
     inert_landing_dict,
     landing_conditions_dict,
     objections,
     policy_dict,
-    policy_for,
 )
+from app.deploy_policy_history import REGISTRY, policy_for
 from app.models import ChangeEvent, ChangeItem
 from app.schemas import DeployChangeIn
 from app.transitions import TransitionError, decide
@@ -334,6 +333,8 @@ def test_every_version_is_retained_and_keyed_by_its_own_number():
 
 
 def test_an_unknown_version_is_a_finding_rather_than_a_default():
+    # The two modules agree on which version is in force: `current()` answers from the live module
+    # alone and `policy_for` from the history module's registry, and nothing else joins them.
     assert policy_for(CURRENT_VERSION) is current()
     assert policy_for(max(REGISTRY) + 1) is None
 
