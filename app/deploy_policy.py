@@ -487,7 +487,7 @@ _V8_BRAIN_CRITERIA: Final = (
 
 
 # THE SAME TERMS ON THE ACT VERSION 5 DECIDED, with BOTH repositories' rollouts re-pinned. Both
-# workflows moved for one reason, the Python 3.14 move (brain#<pr>, change-manager#<pr>), and
+# workflows moved for one reason, the Python 3.14 move (brain#77, change-manager#99), and
 # neither move touches what a green rollout proves:
 #   - brain's `ci.yml` changed only its `test` job, whose setup-python now reads .python-version.
 #     The `deploy` job, its trigger step and its verify step are byte-identical to `7cf6ca2d`.
