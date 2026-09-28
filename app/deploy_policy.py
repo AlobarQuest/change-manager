@@ -23,7 +23,7 @@ in place would silently change what every past approval meant, which is the fail
 exists to prevent.
 
 WHERE A SUPERSEDED VERSION GOES. This module holds only the version in force and the terms it still
-carries; versions 1 to 7 live verbatim in `app.deploy_policy_history`, with `REGISTRY` and
+carries; versions 1 to 8 live verbatim in `app.deploy_policy_history`, with `REGISTRY` and
 `policy_for`. A bump moves the outgoing version there unedited, keeps here any term the new version
 still carries (named for the version that introduced it), and has the history module import that
 term rather than copy it. The import runs one way, history to this module, so nothing a live path
@@ -298,7 +298,7 @@ class DeployPolicy:
 # Terms introduced by a superseded version and still in force under the current one.
 # ---------------------------------------------------------------------------
 #
-# Each is named for the version that introduced it. The versions themselves -- 1 to 7 -- are
+# Each is named for the version that introduced it. The versions themselves -- 1 to 8 -- are
 # retained verbatim in `app.deploy_policy_history`, which imports these rather than holding a
 # second transcription of one judgment.
 
@@ -486,57 +486,56 @@ _V8_BRAIN_CRITERIA: Final = (
 )
 
 
-# THE SAME TERMS ON THE ACT VERSION 5 DECIDED, with one repository's rollout re-pinned. The two
-# halves move together or not at all: the criteria above describe the bytes at `7cf6ca2d`, and a
-# pin left on `c5c08871` would refuse at the act every record those criteria approve -- which is
-# the state this version exists to end, and which held brain's queue from 2026-09-07.
-#
-# change-manager's pin is the SAME OBJECT version 5 declared rather than a copy: nothing about
-# that repository's rollout has moved, and re-transcribing it would be a second copy of one
-# judgment.
-_V8_LANDING: Final = LandingConditions(
+# THE SAME TERMS ON THE ACT VERSION 5 DECIDED, with BOTH repositories' rollouts re-pinned. Both
+# workflows moved for one reason, the Python 3.14 move (brain#77, change-manager#99), and
+# neither move touches what a green rollout proves:
+#   - brain's `ci.yml` changed only its `test` job, whose setup-python now reads .python-version.
+#     The `deploy` job, its trigger step and its verify step are byte-identical to `7cf6ca2d`.
+#   - change-manager's `deploy.yml` changed its `test` job the same way, and gained a
+#     setup-python step at the head of `build-and-deploy`, so the verify step's `python3` is the
+#     pinned interpreter rather than the runner image's. The trigger and verify steps are
+#     byte-identical to `a47d4b18`.
+# So the criteria each pin sits beside are the ones already ratified, unedited.
+_V9_LANDING: Final = LandingConditions(
     update_types=_V5_LANDING.update_types,
     require_head_current_with_base=_V5_LANDING.require_head_current_with_base,
     excluded_ecosystems=_V5_LANDING.excluded_ecosystems,
     rationale=(
-        _V5_LANDING.rationale + " VERSION 8 RE-PINS BRAIN'S ROLLOUT at `7cf6ca2d`, the "
-        "revision that fails a trigger naming no deployment and fails at once on a deployment "
-        "Coolify reports as failed. Nothing else about the act changes."
+        _V5_LANDING.rationale + " VERSION 9 RE-PINS BOTH ROLLOUTS -- brain at `2017c1ed`, "
+        "change-manager at `b92f812c` -- after the Python 3.14 move edited each workflow's "
+        "setup steps. What either rollout proves has not moved. Nothing else about the act "
+        "changes."
     ),
     rollout_workflows={
-        "alobarquest/change-manager": _V5_LANDING.rollout_workflows["alobarquest/change-manager"],
+        "alobarquest/change-manager": WorkflowPin(
+            path=".github/workflows/deploy.yml",
+            # Supersedes `a47d4b18`, which versions 3 to 8 pinned.
+            blob_sha="b92f812ccb036027d4bc8682405ab092ec32eb17",
+        ),
         "alobarquest/brain": WorkflowPin(
             path=".github/workflows/ci.yml",
-            # `brain#62`, 2026-09-07 -- supersedes `c5c088719`, which versions 3 to 7 pinned.
-            blob_sha="7cf6ca2d2a508b1643cdb5ac0d5390357f397d54",
+            # Supersedes `7cf6ca2d`, which version 8 pinned.
+            blob_sha="2017c1ed0fcfbb844d2b933c542c9a5f29a1f17a",
         ),
     },
 )
 
 
-V8: Final = DeployPolicy(
-    version=8,
-    decided="2026-09-16",
+V9: Final = DeployPolicy(
+    version=9,
+    decided="2026-09-28",
     rationale=(
-        "Version 7's populations and terms, with brain's rollout workflow re-pinned and the "
-        "criteria it attests re-ratified. Nothing is widened: the same two repositories, the "
-        "same two change classes, the same risk, the same remedies, the same conditions on the "
-        "act. "
-        "WHY IT EXISTS. brain#62 changed what a green rollout of that repository proves, so the "
-        "producer began deriving criteria that no version had ratified and every brain record "
-        "stopped being approved -- three green pull requests waited from 2026-09-10 for a human "
-        "to read the diff. That is the mechanism working: a rollout workflow changing under a "
-        "standing approval is the one thing this policy notices, and the remedy it asks for is "
-        "exactly this bump. "
-        "WHAT WAS READ BEFORE RATIFYING. The new bytes attest strictly more than the old: a "
-        "trigger whose 2xx names no deployment now fails, and a deployment Coolify reports as "
-        "failed now fails the run at once instead of at the deadline. The revision poll that "
-        "version 3 admitted brain for is unchanged and remains the authority on success, so the "
-        "guarantee the rollback plan attaches to has not moved -- which is why the remedy is "
-        "version 3's, unedited."
+        "Version 8's populations and terms, with both rollout workflows re-pinned. Nothing is "
+        "widened: the same two repositories, the same two change classes, the same risk, the "
+        "same criteria, the same remedies, the same conditions on the act. "
+        "WHY IT EXISTS. Both repositories moved to Python 3.14, which edited the setup steps of "
+        "each rollout workflow and so moved both blobs. A pin left on the old bytes would refuse "
+        "every landing at the act. "
+        "WHAT WAS READ BEFORE RATIFYING. In both workflows the production job's trigger step and "
+        "verify step are byte-identical to the revisions version 8 pinned, and the producer "
+        "derives the same criteria text from the new bytes as from the old. So what a green "
+        "rollout proves is unchanged, and so are the criteria and the remedy attached to them."
     ),
-    # The repositories versions 3 to 7 declared, and the change classes and risk of versions 4
-    # to 7, unchanged.
     repositories=frozenset({"alobarquest/change-manager", "alobarquest/brain"}),
     change_classes=frozenset({"dependency-update", "factory-delivery"}),
     risks=frozenset({"caution"}),
@@ -548,17 +547,18 @@ V8: Final = DeployPolicy(
         "alobarquest/change-manager": _V1_CHANGE_MANAGER_ROLLBACK,
         "alobarquest/brain": _V3_BRAIN_ROLLBACK,
     },
-    landing=_V8_LANDING,
-    # The SAME OBJECT version 7 declared: this version makes no statement about the inert lane.
+    landing=_V9_LANDING,
+    # The SAME OBJECT versions 7 and 8 declared: this version makes no statement about the inert
+    # lane.
     inert_landing=_V7_INERT,
 )
 
 
-CURRENT_VERSION: Final = 8
+CURRENT_VERSION: Final = 9
 
 
 def current() -> DeployPolicy:
-    return V8
+    return V9
 
 
 def objections(policy: DeployPolicy, item: object) -> tuple[str, ...]:

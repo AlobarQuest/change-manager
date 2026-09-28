@@ -9,7 +9,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
+        with: { python-version-file: .python-version }
       - uses: astral-sh/setup-uv@v5
         with: { version: "0.5.x" }
       - run: uv sync --frozen
@@ -23,6 +23,10 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+      # The verify step below parses /api/health with `python3`; without this it would be the
+      # runner image's own interpreter rather than the one .python-version names.
+      - uses: actions/setup-python@v5
+        with: { python-version-file: .python-version }
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io

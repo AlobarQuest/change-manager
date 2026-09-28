@@ -416,7 +416,7 @@ def test_the_current_version_pins_the_rollout_workflow_of_every_repository_it_na
     """A repository the policy admits with no pinned workflow is a repository whose criteria
     describe bytes nobody named, which is the hole this version exists to close."""
     policy = current()
-    assert CURRENT_VERSION == 8
+    assert CURRENT_VERSION == 9
     for repository in policy.repositories:
         pin = policy.landing.rollout_workflows.get(repository)
         assert pin is not None, f"{repository} is admitted with no rollout-workflow pin"
@@ -427,8 +427,9 @@ def test_the_current_version_pins_the_rollout_workflow_of_every_repository_it_na
 def test_the_pin_names_the_revision_the_criteria_were_written_about():
     """The pin and the criteria are two halves of one judgment, and nothing else joins them.
 
-    `a47d4b18…` is the `191ec5a` revision of change-manager's rollout, the one that polls
-    /api/health until it reports the merged commit. The acceptance criteria say exactly that. A
+    `b92f812c…` is change-manager's rollout as version 9 pinned it: the `191ec5a` revision
+    (`a47d4b18…`), which polls /api/health until it reports the merged commit, with only its setup
+    steps moved to Python 3.14. The acceptance criteria say exactly that. A
     pin naming some other blob would leave the policy asserting a guarantee about bytes that do
     not make it.
     """
@@ -436,7 +437,7 @@ def test_the_pin_names_the_revision_the_criteria_were_written_about():
     repository = "alobarquest/change-manager"
     pin = policy.landing.rollout_workflows[repository]
     assert pin.path == ".github/workflows/deploy.yml"
-    assert pin.blob_sha == "a47d4b187c93971a5b5915ce87a963bd4ef35e30"
+    assert pin.blob_sha == "b92f812ccb036027d4bc8682405ab092ec32eb17"
     assert any("api/health" in c for c in policy.acceptance_criteria[repository])
 
 
@@ -446,11 +447,11 @@ def test_the_route_serves_the_pin_so_the_landing_party_holds_no_copy(client, m2m
     assert landing["rollout_workflows"] == {
         "alobarquest/brain": {
             "path": ".github/workflows/ci.yml",
-            "blob_sha": "7cf6ca2d2a508b1643cdb5ac0d5390357f397d54",
+            "blob_sha": "2017c1ed0fcfbb844d2b933c542c9a5f29a1f17a",
         },
         "alobarquest/change-manager": {
             "path": ".github/workflows/deploy.yml",
-            "blob_sha": "a47d4b187c93971a5b5915ce87a963bd4ef35e30",
+            "blob_sha": "b92f812ccb036027d4bc8682405ab092ec32eb17",
         },
     }
 
@@ -499,7 +500,7 @@ def test_the_two_version_fields_are_not_the_same_question(client, m2m, db):
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 1
-    assert served["landing_policy_version"] == CURRENT_VERSION == 8
+    assert served["landing_policy_version"] == CURRENT_VERSION == 9
 
 
 def test_a_drift_record_carries_no_landing_conditions(client, m2m, db):
@@ -760,7 +761,7 @@ def test_brains_pin_names_the_workflow_that_verifies_the_revision():
     """
     pin = current().landing.rollout_workflows[BRAIN]
     assert pin.path == ".github/workflows/ci.yml"
-    assert pin.blob_sha == "7cf6ca2d2a508b1643cdb5ac0d5390357f397d54"
+    assert pin.blob_sha == "2017c1ed0fcfbb844d2b933c542c9a5f29a1f17a"
     assert pin.blob_sha != _BRAIN_ROLLOUT_BEFORE_THE_REVISION_POLL
     assert pin.blob_sha != _BRAIN_ROLLOUT_BEFORE_THE_DEPLOYMENT_ID_CHECK
     assert pin != current().landing.rollout_workflows[CHANGE_MANAGER]
@@ -823,11 +824,11 @@ def test_a_record_approved_under_version_two_is_bound_until_it_is_re_approved(cl
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 2
-    assert served["landing_policy_version"] == 8
+    assert served["landing_policy_version"] == CURRENT_VERSION
 
     replay = client.post("/api/deploy-changes", json=conformant(), headers=m2m)
 
-    assert replay.json()["policy_version"] == 8
+    assert replay.json()["policy_version"] == CURRENT_VERSION
 
 
 def test_version_three_did_not_widen_what_may_land():
@@ -1632,7 +1633,8 @@ def test_version_eight_re_pins_only_brains_rollout():
     """
     v7, v8 = policy_for(7), policy_for(8)
     assert v7 is not None and v8 is not None
-    assert v8 is current()
+    # NOT `v8 is current()` since 2026-09-28: this test's subject is what version 8 claimed about
+    # version 7, and that claim is retained and still true after version 9 superseded it.
 
     assert v8.repositories == v7.repositories
     assert v8.change_classes == v7.change_classes
@@ -1654,6 +1656,50 @@ def test_version_eight_re_pins_only_brains_rollout():
     assert v8.landing.update_types == v7.landing.update_types
     assert v8.landing.excluded_ecosystems == v7.landing.excluded_ecosystems
     assert v8.landing.require_head_current_with_base == v7.landing.require_head_current_with_base
+
+
+def test_version_nine_re_pins_both_rollouts_and_nothing_else():
+    """Version 9's whole claim, asserted term by term against the one it supersedes.
+
+    Both rollout pins moved because the Python 3.14 move edited each workflow's setup steps. What
+    a green rollout proves did not move, so the criteria and remedies are version 8's, the SAME
+    objects. A version that quietly widened anything while wearing this rationale fails here.
+    """
+    v8, v9 = policy_for(8), policy_for(9)
+    assert v8 is not None and v9 is not None
+    assert v9 is current()
+
+    assert v9.repositories == v8.repositories
+    assert v9.change_classes == v8.change_classes
+    assert v9.risks == v8.risks
+    assert v9.inert_landing is v8.inert_landing
+    for repository in (CHANGE_MANAGER, BRAIN):
+        assert v9.acceptance_criteria[repository] is v8.acceptance_criteria[repository]
+        assert v9.rollback_plans[repository] is v8.rollback_plans[repository]
+        old, new = (
+            v8.landing.rollout_workflows[repository],
+            v9.landing.rollout_workflows[repository],
+        )
+        assert new.path == old.path
+        assert new.blob_sha != old.blob_sha
+
+    assert v9.landing.update_types == v8.landing.update_types
+    assert v9.landing.excluded_ecosystems == v8.landing.excluded_ecosystems
+    assert v9.landing.require_head_current_with_base == v8.landing.require_head_current_with_base
+
+
+def test_version_nine_pins_this_repositorys_own_rollout_as_it_is_committed():
+    """change-manager's pin is a claim about a file in this very checkout, so it can be checked
+    here rather than taken on trust: the pinned blob is the one git would store for deploy.yml."""
+    import subprocess
+    from pathlib import Path
+
+    pin = current().landing.rollout_workflows[CHANGE_MANAGER]
+    path = Path(__file__).resolve().parents[1] / pin.path
+    blob = subprocess.run(
+        ["git", "hash-object", str(path)], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    assert blob == pin.blob_sha
 
 
 def test_the_exemption_names_the_sync_app_and_never_the_update_bot():

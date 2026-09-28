@@ -1,5 +1,5 @@
 {
-  "policy_version": 8,
+  "policy_version": 9,
   "repositories": {
     "alobarquest/brain": {
       "acceptance_criteria": [
@@ -14,7 +14,7 @@
         "target": "image"
       },
       "rollout_workflow": {
-        "blob_sha": "7cf6ca2d2a508b1643cdb5ac0d5390357f397d54",
+        "blob_sha": "2017c1ed0fcfbb844d2b933c542c9a5f29a1f17a",
         "path": ".github/workflows/ci.yml"
       }
     },
@@ -31,7 +31,7 @@
         "target": "image"
       },
       "rollout_workflow": {
-        "blob_sha": "a47d4b187c93971a5b5915ce87a963bd4ef35e30",
+        "blob_sha": "b92f812ccb036027d4bc8682405ab092ec32eb17",
         "path": ".github/workflows/deploy.yml"
       }
     }
