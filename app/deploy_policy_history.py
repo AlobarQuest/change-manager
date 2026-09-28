@@ -1,7 +1,7 @@
 """Every SUPERSEDED deploy-policy version, retained verbatim.
 
 `app.deploy_policy` holds the version in force and everything it still carries; this module holds
-versions 1 to 7, which no live path reads. They are kept because a record stores the number of
+versions 1 to 8, which no live path reads. They are kept because a record stores the number of
 the version that approved it, and re-evaluating that approval later means looking the old version
 up and finding what it actually said -- the editing contract in `app.deploy_policy`'s header. A
 superseded version is never edited, here or anywhere.
@@ -27,11 +27,12 @@ from app.deploy_policy import (
     _V3_BRAIN_ROLLBACK,
     _V5_LANDING,
     _V7_INERT,
+    _V8_BRAIN_CRITERIA,
     DEPENDABOT,
     DOCKER,
     SEMVER_MINOR,
     SEMVER_PATCH,
-    V8,
+    V9,
     DeployPolicy,
     InertLanding,
     LandingConditions,
@@ -722,10 +723,78 @@ V7: Final = DeployPolicy(
 )
 
 
+# THE SAME TERMS ON THE ACT VERSION 5 DECIDED, with one repository's rollout re-pinned. The two
+# halves move together or not at all: the criteria above describe the bytes at `7cf6ca2d`, and a
+# pin left on `c5c08871` would refuse at the act every record those criteria approve -- which is
+# the state this version exists to end, and which held brain's queue from 2026-09-07.
+#
+# change-manager's pin is the SAME OBJECT version 5 declared rather than a copy: nothing about
+# that repository's rollout has moved, and re-transcribing it would be a second copy of one
+# judgment.
+_V8_LANDING: Final = LandingConditions(
+    update_types=_V5_LANDING.update_types,
+    require_head_current_with_base=_V5_LANDING.require_head_current_with_base,
+    excluded_ecosystems=_V5_LANDING.excluded_ecosystems,
+    rationale=(
+        _V5_LANDING.rationale + " VERSION 8 RE-PINS BRAIN'S ROLLOUT at `7cf6ca2d`, the "
+        "revision that fails a trigger naming no deployment and fails at once on a deployment "
+        "Coolify reports as failed. Nothing else about the act changes."
+    ),
+    rollout_workflows={
+        "alobarquest/change-manager": _V5_LANDING.rollout_workflows["alobarquest/change-manager"],
+        "alobarquest/brain": WorkflowPin(
+            path=".github/workflows/ci.yml",
+            # `brain#62`, 2026-09-07 -- supersedes `c5c088719`, which versions 3 to 7 pinned.
+            blob_sha="7cf6ca2d2a508b1643cdb5ac0d5390357f397d54",
+        ),
+    },
+)
+
+
+V8: Final = DeployPolicy(
+    version=8,
+    decided="2026-09-16",
+    rationale=(
+        "Version 7's populations and terms, with brain's rollout workflow re-pinned and the "
+        "criteria it attests re-ratified. Nothing is widened: the same two repositories, the "
+        "same two change classes, the same risk, the same remedies, the same conditions on the "
+        "act. "
+        "WHY IT EXISTS. brain#62 changed what a green rollout of that repository proves, so the "
+        "producer began deriving criteria that no version had ratified and every brain record "
+        "stopped being approved -- three green pull requests waited from 2026-09-10 for a human "
+        "to read the diff. That is the mechanism working: a rollout workflow changing under a "
+        "standing approval is the one thing this policy notices, and the remedy it asks for is "
+        "exactly this bump. "
+        "WHAT WAS READ BEFORE RATIFYING. The new bytes attest strictly more than the old: a "
+        "trigger whose 2xx names no deployment now fails, and a deployment Coolify reports as "
+        "failed now fails the run at once instead of at the deadline. The revision poll that "
+        "version 3 admitted brain for is unchanged and remains the authority on success, so the "
+        "guarantee the rollback plan attaches to has not moved -- which is why the remedy is "
+        "version 3's, unedited."
+    ),
+    # The repositories versions 3 to 7 declared, and the change classes and risk of versions 4
+    # to 7, unchanged.
+    repositories=frozenset({"alobarquest/change-manager", "alobarquest/brain"}),
+    change_classes=frozenset({"dependency-update", "factory-delivery"}),
+    risks=frozenset({"caution"}),
+    acceptance_criteria={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_CRITERIA,
+        "alobarquest/brain": _V8_BRAIN_CRITERIA,
+    },
+    rollback_plans={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_ROLLBACK,
+        "alobarquest/brain": _V3_BRAIN_ROLLBACK,
+    },
+    landing=_V8_LANDING,
+    # The SAME OBJECT version 7 declared: this version makes no statement about the inert lane.
+    inert_landing=_V7_INERT,
+)
+
+
 # Every version ever, retained. A record stores the number that approved it, so an approval stays
 # re-evaluable after the policy has moved on.
 REGISTRY: Final[dict[int, DeployPolicy]] = {
-    policy.version: policy for policy in (V1, V2, V3, V4, V5, V6, V7, V8)
+    policy.version: policy for policy in (V1, V2, V3, V4, V5, V6, V7, V8, V9)
 }
 
 

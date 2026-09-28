@@ -470,7 +470,7 @@ class DeployObservationIn(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _the_run_is_present_or_absent_as_a_whole(self) -> "DeployObservationIn":
+    def _the_run_is_present_or_absent_as_a_whole(self) -> DeployObservationIn:
         """A run is observed completely or not at all, and only once it has SETTLED.
 
         Two shapes are admissible and nothing between them: a concluded run (id, attempt and
