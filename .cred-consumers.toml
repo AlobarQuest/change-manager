@@ -1,0 +1,123 @@
+# .cred-consumers.toml — WS-0.7 rotation-lane consumer inventory for the M2M bearers
+# change-manager authenticates (app/config.py, app/auth.py).
+#
+# Read by infraops-mcp-server's nightly security-drift run (src/security-drift/
+# cred-rotation.ts) once this file's absolute path is listed in
+# ~/.config/infra-drift/cred-consumers.list. Schema, consumer kinds and the strict
+# subset-TOML rules are documented in infraops-mcp-server/.cred-consumers.toml.
+#
+# Each bearer is a plaintext Coolify env var on the change-manager app (prod,
+# re45tafypao3nly3qa9a79dp), and every consumer fetches its BWS keeper by UUID at
+# runtime. NO entry carries consumers_verified (not fingerprint-swept), and the class
+# is executor:false, so every rotation is the manual checklist. Dates are BWS
+# creationDate. Values NEVER appear here.
+
+version = 1
+
+[[credential]]
+id = "change-manager-full-bearer"
+class = "change-manager-m2m-bearer"
+provider = "change-manager"
+provider_identity = "FULL scope (M2M_TOKEN)"
+bws_uuid = "af0e4192-edc6-46ae-9e4f-b469011dbb8d"
+created = "2026-06-14"
+disposition = "reissue"
+
+  [[credential.consumer]]
+  kind = "bws-secret"
+  uuid = "af0e4192-edc6-46ae-9e4f-b469011dbb8d"
+  note = "change-manager/M2M_TOKEN (Ops / Platform) — keeper"
+
+  [[credential.consumer]]
+  kind = "coolify-env"
+  instance = "prod"
+  resource_type = "application"
+  uuid = "re45tafypao3nly3qa9a79dp"
+  key = "M2M_TOKEN"
+  redeploy = true
+
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "infraops-mcp-server"
+  ref = "scripts/drift-audit.sh (03:00) and scripts/change-window.sh (04:00)"
+
+[[credential]]
+id = "change-manager-read-bearer"
+class = "change-manager-m2m-bearer"
+provider = "change-manager"
+provider_identity = "READ scope (M2M_TOKEN_READ)"
+bws_uuid = "314f276d-55ca-4ddc-a24d-b4a3013508cd"
+created = "2026-08-11"
+disposition = "reissue"
+
+  [[credential.consumer]]
+  kind = "bws-secret"
+  uuid = "314f276d-55ca-4ddc-a24d-b4a3013508cd"
+  note = "change-manager/M2M_TOKEN_READ (Ops / Platform) — keeper"
+
+  [[credential.consumer]]
+  kind = "coolify-env"
+  instance = "prod"
+  resource_type = "application"
+  uuid = "re45tafypao3nly3qa9a79dp"
+  key = "M2M_TOKEN_READ"
+  redeploy = true
+
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "orchestrator"
+  ref = "scripts/run-estate-landing.sh, run-bump-proposer.sh, run-inert-landing.sh, run-work-carrier.sh"
+
+[[credential]]
+id = "change-manager-propose-bearer"
+class = "change-manager-m2m-bearer"
+provider = "change-manager"
+provider_identity = "PROPOSE scope (M2M_TOKEN_PROPOSE)"
+bws_uuid = "acccb346-4baa-43ec-a1d4-b4a400c048ee"
+created = "2026-08-12"
+disposition = "reissue"
+
+  [[credential.consumer]]
+  kind = "bws-secret"
+  uuid = "acccb346-4baa-43ec-a1d4-b4a400c048ee"
+  note = "change-manager/M2M_TOKEN_PROPOSE (Ops / Platform) — keeper"
+
+  [[credential.consumer]]
+  kind = "coolify-env"
+  instance = "prod"
+  resource_type = "application"
+  uuid = "re45tafypao3nly3qa9a79dp"
+  key = "M2M_TOKEN_PROPOSE"
+  redeploy = true
+
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "orchestrator"
+  ref = "scripts/run-bump-proposer.sh, run-change-proposer.sh, run-work-carrier.sh"
+
+[[credential]]
+id = "change-manager-observe-bearer"
+class = "change-manager-m2m-bearer"
+provider = "change-manager"
+provider_identity = "OBSERVE scope (M2M_TOKEN_OBSERVE)"
+bws_uuid = "3b9503da-eb7e-401d-b4a7-b4a400c07efb"
+created = "2026-08-12"
+disposition = "reissue"
+
+  [[credential.consumer]]
+  kind = "bws-secret"
+  uuid = "3b9503da-eb7e-401d-b4a7-b4a400c07efb"
+  note = "change-manager/M2M_TOKEN_OBSERVE (Ops / Platform) — keeper"
+
+  [[credential.consumer]]
+  kind = "coolify-env"
+  instance = "prod"
+  resource_type = "application"
+  uuid = "re45tafypao3nly3qa9a79dp"
+  key = "M2M_TOKEN_OBSERVE"
+  redeploy = true
+
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "orchestrator"
+  ref = "scripts/run-deploy-watcher.sh"
