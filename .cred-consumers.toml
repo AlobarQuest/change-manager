@@ -93,7 +93,7 @@ disposition = "reissue"
   [[credential.consumer]]
   kind = "runtime-fetch"
   repo = "orchestrator"
-  ref = "scripts/run-bump-proposer.sh, run-change-proposer.sh, run-work-carrier.sh"
+  ref = "scripts/run-bump-proposer.sh, run-change-proposer.sh, run-rotation-proposer.sh, run-work-carrier.sh"
 
 [[credential]]
 id = "change-manager-observe-bearer"
