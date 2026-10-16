@@ -22,8 +22,9 @@ Two kinds of failure, deliberately different:
   the answer is no, every bearer is refused. An `until` already past is accepted and
   authenticates nothing.
 
-TRANSITIONAL: a value that isn't a JSON object is read as a plaintext bearer, so this parser can
-deploy before production's variables are rewritten. The cutover removes it.
+A value that isn't this JSON, a plaintext bearer included, doesn't parse. An image older than this
+form reads the JSON as a plaintext bearer, so rolling back past it means rewriting the variables
+first (`docs/operations/bearer-settings.md`).
 """
 
 from __future__ import annotations
@@ -44,8 +45,6 @@ from app.scopes import FULL, OBSERVE, PROPOSE, READ
 logger = logging.getLogger(__name__)
 
 HASH: Final = re.compile(r"[0-9a-f]{64}")
-# TRANSITIONAL: production's plaintext bearers, measured 2026-10-16: 43 or 64 URL-safe characters.
-PLAINTEXT: Final = re.compile(r"[A-Za-z0-9_-]{43,64}")
 MAX_PREVIOUS_OVERLAP: Final = timedelta(days=8)
 
 # Settings field, scope, and the variable an operator reads in Coolify. Narrow scopes come FIRST,
@@ -83,17 +82,11 @@ def parse(raw: str, scope: str) -> Bearer | None:
     """The bearer one variable configures, or None when it's unset."""
     if not raw:
         return None
-    if not raw.lstrip().startswith("{"):
-        # TRANSITIONAL: a plaintext bearer, hashed here. The cutover removes this branch. Only
-        # the shape production's bearers have is accepted, so a hashed setting stored wrongly
-        # (quoted, prefixed, `KEY=`-pasted) doesn't become a bearer anyone who reads it knows. A
-        # bare hash can't be told apart: two production bearers are 64 lowercase hex characters.
-        if PLAINTEXT.fullmatch(raw) is None:
-            raise BearerSettingError("not a JSON object, and not a plaintext bearer's shape")
-        return Bearer(scope=scope, token_hash=bearer_hash(raw))
     try:
         document = json.loads(raw)
-    except json.JSONDecodeError as error:
+    # ValueError covers malformed JSON and an integer over Python's digit limit; RecursionError,
+    # nesting too deep to decode. Either is a value that doesn't parse, never a crash at boot.
+    except (ValueError, RecursionError) as error:
         raise BearerSettingError("not JSON") from error
     if not isinstance(document, dict) or set(document) != {scope}:
         raise BearerSettingError(f"not one entry keyed {scope!r}")

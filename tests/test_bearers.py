@@ -146,22 +146,40 @@ def test_a_broken_rule_refuses_every_bearer_at_request_time(client, full_setting
     [
         "{",
         "{}",
+        '["read"]',
         '{"read": "x"}',
         json.dumps({"full": {"token_hash": _sha("t")}}),
         json.dumps({"read": {"token_hash": _sha("t")}, "full": {"token_hash": _sha("t")}}),
         json.dumps({"read": {"token_hash": _sha("t").upper()}}),
         json.dumps({"read": {"token_hash": _sha("t"), "agent_id": "x"}}),
         json.dumps({"read": {"token_hash": _sha("t"), "previous": None}}),
+        "123",
+        "1" * 5000,
+        "[" * 100000,
+        json.dumps(json.dumps({"read": {"token_hash": _sha("t")}})),
+        _sha("t"),
+        f"M2M_TOKEN_READ={_sha('t')}",
+        f"sha256:{_sha('t')}",
+        "a" * 43,
     ],
     ids=[
         "not JSON",
         "no entry",
+        "not an object",
         "entry not an object",
         "another scope's entry",
         "two entries",
         "uppercase hash",
         "extra key",
         "null previous",
+        "a number",
+        "too many digits",
+        "nested too deep",
+        "JSON inside a string",
+        "a bare hash",
+        "KEY= pasted",
+        "prefixed hash",
+        "a plaintext bearer",
     ],
 )
 def test_a_variable_that_does_not_parse_grants_nothing(value: str, caplog) -> None:
@@ -195,54 +213,14 @@ def test_an_old_value_shared_by_two_previous_hashes_resolves_to_the_narrower_one
     assert bearers.scope_for("old", settings, datetime.now(UTC)) == "read"
 
 
-PLAIN = "a" * 43
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        f'"{_sha("t")}"',
-        f"'{_sha('t')}'",
-        f"M2M_TOKEN={_sha('t')}",
-        f"sha256:{_sha('t')}",
-        f"`{_sha('t')}`",
-        f"[{_sha('t')}]",
-        f" {_sha('t')} ",
-        _sha("t") + "x",
-        "a" * 42,
-        "abc\udcff" + "a" * 40,
-        "%7B%22full%22" + "a" * 40,
-    ],
-    ids=[
-        "double-quoted",
-        "single-quoted",
-        "KEY= pasted",
-        "prefixed",
-        "backticked",
-        "array",
-        "padded",
-        "too long",
-        "too short",
-        "undecodable byte",
-        "url-encoded",
-    ],
-)
-def test_transitional_a_value_not_shaped_like_a_bearer_grants_nothing(value: str) -> None:
-    """TRANSITIONAL. A hashed setting stored wrongly must not become a bearer its reader knows."""
-    settings = _settings(m2m_token=value)
-    assert bearers.configured(settings) == []
-    # A header can't carry a surrogate, so present what one could.
-    presented = value.strip().encode("utf-8", "replace").decode()
-    assert bearers.scope_for(presented, settings, datetime.now(UTC)) is None
-
-
-@pytest.mark.parametrize("value", [PLAIN, _sha("t"), "A-_9" * 16])
-def test_transitional_a_plaintext_value_still_authenticates(value: str) -> None:
-    """TRANSITIONAL. Production's shapes: 43 URL-safe characters, and 64 lowercase hex, which is
-    why a bare hash can't be refused here. Deleted with the plaintext branch."""
-    settings = _settings(m2m_token=value)
-    assert bearers.scope_for(value, settings, datetime.now(UTC)) == "full"
-    assert bearers.scope_for(PLAIN + "b", settings, datetime.now(UTC)) is None
+def test_a_plaintext_bearer_grants_nothing(caplog) -> None:
+    """The plaintext form is gone: a bearer stored as itself doesn't parse, and isn't a bearer."""
+    plain = "a" * 43
+    settings = _settings(m2m_token=plain)
+    with caplog.at_level(logging.ERROR, logger="app.bearers"):
+        assert bearers.configured(settings) == []
+        assert bearers.scope_for(plain, settings, datetime.now(UTC)) is None
+    assert "M2M_TOKEN doesn't parse" in caplog.text
 
 
 # --- what stops boot ------------------------------------------------------------------------

@@ -44,3 +44,8 @@ variables holding JSON, that image accepts the JSON text itself as a bearer, whi
 read the setting can build, and refuses every real bearer. Before rolling back to such an image,
 rewrite each variable to its plaintext bearer from its BWS keeper (`.cred-consumers.toml` names the
 UUIDs), then deploy the older image.
+
+Rolling forward again needs the reverse. An image that holds only the hashed form refuses a plaintext
+value, so rewrite each variable back to its hashed value before deploying it. The image from
+change-manager #115 reads both forms, so it's the safe image to stand on while the variables hold
+either.
