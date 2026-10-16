@@ -1,4 +1,5 @@
 import app.auth as auth
+from tests.bearer_settings import hashed
 
 ESC = {
     "proposal_id": "572:r1",
@@ -19,7 +20,7 @@ H = {"Authorization": "Bearer testtok"}
 
 
 def _auth():
-    auth.settings.m2m_token = "testtok"
+    auth.settings.m2m_token = hashed("full", "testtok")
 
 
 def test_sync_then_list_and_get(client):

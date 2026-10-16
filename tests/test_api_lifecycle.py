@@ -1,5 +1,6 @@
 import app.auth as auth
 from app.models import ChangeAttempt, ChangeEvent, ChangeItem
+from tests.bearer_settings import hashed
 
 H = {"Authorization": "Bearer t"}
 ESC = {
@@ -16,7 +17,7 @@ BODY = {"generated_at": "t", "source_report": "2026-06-14.json", "escalations": 
 
 
 def _approved(client, db):
-    auth.settings.m2m_token = "t"
+    auth.settings.m2m_token = hashed("full", "t")
     client.post("/api/sync", json=BODY, headers=H)
     it = db.query(ChangeItem).one()
     it.status = "approved"

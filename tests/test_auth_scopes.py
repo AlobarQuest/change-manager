@@ -15,6 +15,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from app import bearers
 from app.main import app
 from app.scopes import (
     CALLER_CHOSEN_STATUS_ROUTES,
@@ -24,6 +25,7 @@ from app.scopes import (
     SCOPE_ROUTES,
     STATUS_MOVING_ROUTES,
 )
+from tests.bearer_settings import hashed
 
 FULL_TOKEN = "full-tok"
 TOKENS = {"read": "read-tok", "propose": "propose-tok", "observe": "observe-tok"}
@@ -40,10 +42,10 @@ def scoped() -> Iterator[None]:
         auth.settings.m2m_token_propose,
         auth.settings.m2m_token_observe,
     )
-    auth.settings.m2m_token = FULL_TOKEN
-    auth.settings.m2m_token_read = TOKENS["read"]
-    auth.settings.m2m_token_propose = TOKENS["propose"]
-    auth.settings.m2m_token_observe = TOKENS["observe"]
+    auth.settings.m2m_token = hashed("full", FULL_TOKEN)
+    auth.settings.m2m_token_read = hashed("read", TOKENS["read"])
+    auth.settings.m2m_token_propose = hashed("propose", TOKENS["propose"])
+    auth.settings.m2m_token_observe = hashed("observe", TOKENS["observe"])
     yield
     (
         auth.settings.m2m_token,
@@ -344,8 +346,8 @@ def test_a_value_configured_for_two_scopes_resolves_to_the_narrower_one(
     import app.auth as auth
 
     before = (auth.settings.m2m_token, auth.settings.m2m_token_read)
-    auth.settings.m2m_token = "shared"
-    auth.settings.m2m_token_read = "shared"
+    auth.settings.m2m_token = hashed("full", "shared")
+    auth.settings.m2m_token_read = hashed("read", "shared")
     try:
         # `read` may list items, and must NOT inherit full's ability to approve.
         assert client.get("/api/items", headers=_bearer("shared")).status_code == 200
@@ -389,18 +391,12 @@ def test_an_unset_scope_secret_grants_nothing(client: TestClient) -> None:
         auth.settings.m2m_token_propose,
         auth.settings.m2m_token_observe,
     )
-    auth.settings.m2m_token = FULL_TOKEN
+    auth.settings.m2m_token = hashed("full", FULL_TOKEN)
     auth.settings.m2m_token_read = ""
     auth.settings.m2m_token_propose = ""
     auth.settings.m2m_token_observe = ""
     try:
-        # The map itself must not contain an entry for the empty string. Asserted DIRECTLY, not
-        # only through a request: a mutation pass showed the request-level assertions below stay
-        # green when this falsy check is removed, because `require_m2m` has its own `if token`
-        # guard that short-circuits first. Two guards, and without this line only one of them is
-        # tested -- so removing the outer one later would silently expose the inner one.
-        assert "" not in auth._token_scopes()
-        assert auth._token_scopes() == {FULL_TOKEN: "full"}
+        assert [bearer.scope for bearer in bearers.configured(auth.settings)] == ["full"]
 
         assert client.get("/api/items", headers={"Authorization": "Bearer "}).status_code == 401
         assert client.get("/api/items", headers={"Authorization": "Bearer"}).status_code == 401

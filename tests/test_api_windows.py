@@ -1,10 +1,11 @@
 import app.auth as auth
+from tests.bearer_settings import hashed
 
 H = {"Authorization": "Bearer t"}
 
 
 def test_create_then_finish_window_run(client):
-    auth.settings.m2m_token = "t"
+    auth.settings.m2m_token = hashed("full", "t")
     r = client.post("/api/window-runs", headers=H, json={"started_at": "2026-06-14T04:00:00Z"})
     assert r.status_code == 200
     wid = r.json()["id"]
