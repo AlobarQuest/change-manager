@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 import app.auth as auth
 from app.models import ChangeItem
+from tests.bearer_settings import hashed
 
 H = {"Authorization": "Bearer t"}
 
@@ -28,7 +29,7 @@ def _item(db, status="pending"):
 
 
 def test_api_handoff(client, db):
-    auth.settings.m2m_token = "t"
+    auth.settings.m2m_token = hashed("full", "t")
     it = _item(db)
     r = client.post(f"/api/items/{it.id}/handoff", json={"actor": "devon@example.com"}, headers=H)
     assert r.status_code == 200
@@ -38,7 +39,7 @@ def test_api_handoff(client, db):
 
 
 def test_api_handoff_conflict_from_approved(client, db):
-    auth.settings.m2m_token = "t"
+    auth.settings.m2m_token = hashed("full", "t")
     it = _item(db, status="approved")
     r = client.post(f"/api/items/{it.id}/handoff", json={"actor": "devon@example.com"}, headers=H)
     assert r.status_code == 409

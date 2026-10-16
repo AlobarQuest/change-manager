@@ -5,7 +5,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "sqlite:///./change_manager.db"
-    m2m_token: str = ""  # required in prod; empty disables auth in local dev
+    # Each machine bearer's setting: one JSON object holding its sha256 hash and, during a
+    # rotation, the previous one (`app/bearers.py`). Empty grants nothing.
+    m2m_token: str = ""
     # Narrow machine credentials (ADR-0019 increment 4, task zero). Each is OPTIONAL and each
     # defaults to empty, which grants NOTHING -- see `auth._token_scopes`. What they may reach is
     # `app/scopes.py`; none of them can approve a change record, which is the property the

@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 import app.auth as auth
 from app.events import record_event
 from app.models import ChangeItem
+from tests.bearer_settings import hashed
 
 H = {"Authorization": "Bearer t"}
 
@@ -41,7 +42,7 @@ def _seed(db, n: int) -> ChangeItem:
 
 
 def test_events_pagination_and_shape(client, db):
-    auth.settings.m2m_token = "t"
+    auth.settings.m2m_token = hashed("full", "t")
     _seed(db, 1)
     r = client.get("/api/events?after_id=0&limit=1", headers=H)
     assert r.status_code == 200
@@ -58,5 +59,5 @@ def test_events_pagination_and_shape(client, db):
 
 
 def test_events_requires_m2m(client, db):
-    auth.settings.m2m_token = "t"
+    auth.settings.m2m_token = hashed("full", "t")
     assert client.get("/api/events").status_code == 401

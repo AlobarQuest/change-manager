@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 import app.models  # noqa: F401
 from app.db import Base, get_db
 from app.main import app
+from tests.bearer_settings import hashed
 
 
 @pytest.fixture()
@@ -41,7 +42,7 @@ def m2m() -> dict[str, str]:
     """Authorize the /api routes, and hand back the header to send."""
     import app.auth as auth
 
-    auth.settings.m2m_token = "testtok"
+    auth.settings.m2m_token = hashed("full", "testtok")
     return {"Authorization": "Bearer testtok"}
 
 
