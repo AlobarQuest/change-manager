@@ -84,7 +84,9 @@ def parse(raw: str, scope: str) -> Bearer | None:
         return None
     try:
         document = json.loads(raw)
-    except json.JSONDecodeError as error:
+    # ValueError covers malformed JSON and an integer over Python's digit limit; RecursionError,
+    # nesting too deep to decode. Either is a value that doesn't parse, never a crash at boot.
+    except (ValueError, RecursionError) as error:
         raise BearerSettingError("not JSON") from error
     if not isinstance(document, dict) or set(document) != {scope}:
         raise BearerSettingError(f"not one entry keyed {scope!r}")
