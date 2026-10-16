@@ -195,19 +195,54 @@ def test_an_old_value_shared_by_two_previous_hashes_resolves_to_the_narrower_one
     assert bearers.scope_for("old", settings, datetime.now(UTC)) == "read"
 
 
-@pytest.mark.parametrize("value", [_sha("t"), f"  {_sha('t')} ", '"t"', "'t'"])
-def test_transitional_a_hash_or_quoted_value_is_not_a_plaintext_bearer(value: str) -> None:
-    """TRANSITIONAL. A hashed setting stored without its JSON must not become a known bearer."""
+PLAIN = "a" * 43
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        f'"{_sha("t")}"',
+        f"'{_sha('t')}'",
+        f"M2M_TOKEN={_sha('t')}",
+        f"sha256:{_sha('t')}",
+        f"`{_sha('t')}`",
+        f"[{_sha('t')}]",
+        f" {_sha('t')} ",
+        _sha("t") + "x",
+        "a" * 42,
+        "abc\udcff" + "a" * 40,
+        "%7B%22full%22" + "a" * 40,
+    ],
+    ids=[
+        "double-quoted",
+        "single-quoted",
+        "KEY= pasted",
+        "prefixed",
+        "backticked",
+        "array",
+        "padded",
+        "too long",
+        "too short",
+        "undecodable byte",
+        "url-encoded",
+    ],
+)
+def test_transitional_a_value_not_shaped_like_a_bearer_grants_nothing(value: str) -> None:
+    """TRANSITIONAL. A hashed setting stored wrongly must not become a bearer its reader knows."""
     settings = _settings(m2m_token=value)
     assert bearers.configured(settings) == []
-    assert bearers.scope_for(value.strip(), settings, datetime.now(UTC)) is None
+    # A header can't carry a surrogate, so present what one could.
+    presented = value.strip().encode("utf-8", "replace").decode()
+    assert bearers.scope_for(presented, settings, datetime.now(UTC)) is None
 
 
-def test_transitional_a_plaintext_value_still_authenticates() -> None:
-    """TRANSITIONAL. Deleted with the plaintext branch once production holds hashes."""
-    settings = _settings(m2m_token="plain")
-    assert bearers.scope_for("plain", settings, datetime.now(UTC)) == "full"
-    assert bearers.scope_for("other", settings, datetime.now(UTC)) is None
+@pytest.mark.parametrize("value", [PLAIN, _sha("t"), "A-_9" * 16])
+def test_transitional_a_plaintext_value_still_authenticates(value: str) -> None:
+    """TRANSITIONAL. Production's shapes: 43 URL-safe characters, and 64 lowercase hex, which is
+    why a bare hash can't be refused here. Deleted with the plaintext branch."""
+    settings = _settings(m2m_token=value)
+    assert bearers.scope_for(value, settings, datetime.now(UTC)) == "full"
+    assert bearers.scope_for(PLAIN + "b", settings, datetime.now(UTC)) is None
 
 
 # --- what stops boot ------------------------------------------------------------------------

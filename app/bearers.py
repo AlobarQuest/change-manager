@@ -44,6 +44,8 @@ from app.scopes import FULL, OBSERVE, PROPOSE, READ
 logger = logging.getLogger(__name__)
 
 HASH: Final = re.compile(r"[0-9a-f]{64}")
+# TRANSITIONAL: production's plaintext bearers, measured 2026-10-16: 43 or 64 URL-safe characters.
+PLAINTEXT: Final = re.compile(r"[A-Za-z0-9_-]{43,64}")
 MAX_PREVIOUS_OVERLAP: Final = timedelta(days=8)
 
 # Settings field, scope, and the variable an operator reads in Coolify. Narrow scopes come FIRST,
@@ -82,11 +84,12 @@ def parse(raw: str, scope: str) -> Bearer | None:
     if not raw:
         return None
     if not raw.lstrip().startswith("{"):
-        # TRANSITIONAL: a plaintext bearer, hashed here. The cutover removes this branch. A hash
-        # or a quoted value is a hashed setting stored wrongly, and must not become a bearer
-        # whose value anyone who reads the setting knows.
-        if HASH.fullmatch(raw.strip()) or raw.lstrip().startswith(('"', "'")):
-            raise BearerSettingError("a hash or a quoted value isn't a plaintext bearer")
+        # TRANSITIONAL: a plaintext bearer, hashed here. The cutover removes this branch. Only
+        # the shape production's bearers have is accepted, so a hashed setting stored wrongly
+        # (quoted, prefixed, `KEY=`-pasted) doesn't become a bearer anyone who reads it knows. A
+        # bare hash can't be told apart: two production bearers are 64 lowercase hex characters.
+        if PLAINTEXT.fullmatch(raw) is None:
+            raise BearerSettingError("not a JSON object, and not a plaintext bearer's shape")
         return Bearer(scope=scope, token_hash=bearer_hash(raw))
     try:
         document = json.loads(raw)

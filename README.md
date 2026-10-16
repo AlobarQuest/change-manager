@@ -20,7 +20,7 @@ GUI + SSO land in plan 2b; deploy in plan 2c.
   bearer's setting for `/api/*`: one JSON object keyed by the scope (`full`, `read`, `propose`,
   `observe`) holding the bearer's sha256 hash, never the bearer, plus an optional `previous` hash
   and its `until` during a rotation. For example
-  `{"read": {"token_hash": "<sha256 hex of the bearer>"}}`. `app/bearers.py` holds the rules.
+  `{"read": {"token_hash": "<sha256 hex of the bearer>"}}`. `app/bearers.py` holds the rules and `docs/operations/bearer-settings.md` the procedures.
   Empty grants nothing.
 
 ## Migrations
