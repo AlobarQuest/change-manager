@@ -304,3 +304,11 @@ def test_the_presented_bearer_is_stripped_before_it_is_hashed(client, full_setti
     setting built from a keeper hashes the keeper's value with surrounding whitespace removed."""
     full_setting.m2m_token = hashed("full", "t")
     assert client.get("/api/items", headers={"Authorization": "Bearer   t  "}).status_code == 200
+
+
+def test_an_unset_variable_is_not_a_parse_error(caplog) -> None:
+    """Unset is a normal state (a repository may configure only some scopes), so it's silent."""
+    settings = _settings(m2m_token=hashed("full", "f"))
+    with caplog.at_level(logging.ERROR, logger="app.bearers"):
+        assert [bearer.scope for bearer in bearers.configured(settings)] == ["full"]
+    assert caplog.records == []
