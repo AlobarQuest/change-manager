@@ -36,8 +36,7 @@ def _settings(**values: str) -> Settings:
     return Settings.model_validate(values)
 
 
-def _sha(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
+_sha = bearers.bearer_hash
 
 
 # --- the cross-repository contract ----------------------------------------------------------
@@ -194,6 +193,14 @@ def test_an_old_value_shared_by_two_previous_hashes_resolves_to_the_narrower_one
         m2m_token_read=hashed("read", "r2", previous="old", until=until),
     )
     assert bearers.scope_for("old", settings, datetime.now(UTC)) == "read"
+
+
+@pytest.mark.parametrize("value", [_sha("t"), f"  {_sha('t')} ", '"t"', "'t'"])
+def test_transitional_a_hash_or_quoted_value_is_not_a_plaintext_bearer(value: str) -> None:
+    """TRANSITIONAL. A hashed setting stored without its JSON must not become a known bearer."""
+    settings = _settings(m2m_token=value)
+    assert bearers.configured(settings) == []
+    assert bearers.scope_for(value.strip(), settings, datetime.now(UTC)) is None
 
 
 def test_transitional_a_plaintext_value_still_authenticates() -> None:

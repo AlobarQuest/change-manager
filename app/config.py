@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     # rotation, the previous one (`app/bearers.py`). Empty grants nothing.
     m2m_token: str = ""
     # Narrow machine credentials (ADR-0019 increment 4, task zero). Each is OPTIONAL and each
-    # defaults to empty, which grants NOTHING -- see `auth._token_scopes`. What they may reach is
+    # defaults to empty, which grants NOTHING -- see `app/bearers.py`. What they may reach is
     # `app/scopes.py`; none of them can approve a change record, which is the property the
     # increment exists to establish before it ships a producer of those records.
     m2m_token_read: str = ""

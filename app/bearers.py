@@ -82,7 +82,11 @@ def parse(raw: str, scope: str) -> Bearer | None:
     if not raw:
         return None
     if not raw.lstrip().startswith("{"):
-        # TRANSITIONAL: a plaintext bearer, hashed here. The cutover removes this branch.
+        # TRANSITIONAL: a plaintext bearer, hashed here. The cutover removes this branch. A hash
+        # or a quoted value is a hashed setting stored wrongly, and must not become a bearer
+        # whose value anyone who reads the setting knows.
+        if HASH.fullmatch(raw.strip()) or raw.lstrip().startswith(('"', "'")):
+            raise BearerSettingError("a hash or a quoted value isn't a plaintext bearer")
         return Bearer(scope=scope, token_hash=bearer_hash(raw))
     try:
         document = json.loads(raw)

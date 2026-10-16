@@ -16,7 +16,12 @@ GUI + SSO land in plan 2b; deploy in plan 2c.
 ## Config (env / .env)
 
 - `DATABASE_URL` — Postgres in prod (e.g. `postgresql+psycopg://...`); defaults to local SQLite.
-- `M2M_TOKEN` — the bearer token the mini uses for `/api/*`. Empty = reject all (fail-closed).
+- `M2M_TOKEN`, `M2M_TOKEN_READ`, `M2M_TOKEN_PROPOSE`, `M2M_TOKEN_OBSERVE` — each machine
+  bearer's setting for `/api/*`: one JSON object keyed by the scope (`full`, `read`, `propose`,
+  `observe`) holding the bearer's sha256 hash, never the bearer, plus an optional `previous` hash
+  and its `until` during a rotation. For example
+  `{"read": {"token_hash": "<sha256 hex of the bearer>"}}`. `app/bearers.py` holds the rules.
+  Empty grants nothing.
 
 ## Migrations
 
