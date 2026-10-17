@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 import app.auth as auth
 from app.models import ChangeItem
+from tests.bearer_settings import hashed
 
 HANDOFF = {
     "repo": "booking-system",
@@ -16,7 +17,7 @@ HANDOFF = {
 
 
 def setup_module(module):
-    auth.settings.m2m_token = "t"
+    auth.settings.m2m_token = hashed("full", "t")
 
 
 def _hdr():

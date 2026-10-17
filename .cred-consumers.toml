@@ -6,9 +6,11 @@
 # ~/.config/infra-drift/cred-consumers.list. Schema, consumer kinds and the strict
 # subset-TOML rules are documented in infraops-mcp-server/.cred-consumers.toml.
 #
-# Each bearer is a plaintext Coolify env var on the change-manager app (prod,
-# re45tafypao3nly3qa9a79dp), and every consumer fetches its BWS keeper by UUID at
-# runtime. NO entry carries consumers_verified (not fingerprint-swept), and the class
+# Each bearer's Coolify env var on the change-manager app (prod, re45tafypao3nly3qa9a79dp)
+# holds only its sha256 hash, as one JSON entry keyed by scope (docs/operations/
+# bearer-settings.md, ADR-0055 increment 6): kind coolify-env-hash is declarative, so the
+# executor can never write a raw value there. Every consumer fetches its BWS keeper by
+# UUID at runtime. NO entry carries consumers_verified (not fingerprint-swept), and the class
 # is executor:false, so every rotation is the manual checklist. Dates are BWS
 # creationDate. Values NEVER appear here.
 
@@ -29,12 +31,13 @@ disposition = "reissue"
   note = "change-manager/M2M_TOKEN (Ops / Platform) — keeper"
 
   [[credential.consumer]]
-  kind = "coolify-env"
+  kind = "coolify-env-hash"
   instance = "prod"
   resource_type = "application"
   uuid = "re45tafypao3nly3qa9a79dp"
   key = "M2M_TOKEN"
-  redeploy = true
+  entry = "full"
+  note = "full entry (sha256 only)"
 
   [[credential.consumer]]
   kind = "runtime-fetch"
@@ -56,12 +59,13 @@ disposition = "reissue"
   note = "change-manager/M2M_TOKEN_READ (Ops / Platform) — keeper"
 
   [[credential.consumer]]
-  kind = "coolify-env"
+  kind = "coolify-env-hash"
   instance = "prod"
   resource_type = "application"
   uuid = "re45tafypao3nly3qa9a79dp"
   key = "M2M_TOKEN_READ"
-  redeploy = true
+  entry = "read"
+  note = "read entry (sha256 only)"
 
   [[credential.consumer]]
   kind = "runtime-fetch"
@@ -83,12 +87,13 @@ disposition = "reissue"
   note = "change-manager/M2M_TOKEN_PROPOSE (Ops / Platform) — keeper"
 
   [[credential.consumer]]
-  kind = "coolify-env"
+  kind = "coolify-env-hash"
   instance = "prod"
   resource_type = "application"
   uuid = "re45tafypao3nly3qa9a79dp"
   key = "M2M_TOKEN_PROPOSE"
-  redeploy = true
+  entry = "propose"
+  note = "propose entry (sha256 only)"
 
   [[credential.consumer]]
   kind = "runtime-fetch"
@@ -110,12 +115,13 @@ disposition = "reissue"
   note = "change-manager/M2M_TOKEN_OBSERVE (Ops / Platform) — keeper"
 
   [[credential.consumer]]
-  kind = "coolify-env"
+  kind = "coolify-env-hash"
   instance = "prod"
   resource_type = "application"
   uuid = "re45tafypao3nly3qa9a79dp"
   key = "M2M_TOKEN_OBSERVE"
-  redeploy = true
+  entry = "observe"
+  note = "observe entry (sha256 only)"
 
   [[credential.consumer]]
   kind = "runtime-fetch"

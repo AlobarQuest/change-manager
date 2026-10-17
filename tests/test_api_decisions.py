@@ -1,5 +1,6 @@
 import app.auth as auth
 from app.models import ChangeEvent, ChangeItem
+from tests.bearer_settings import hashed
 
 H = {"Authorization": "Bearer t"}
 ESC = {
@@ -17,7 +18,7 @@ DEC = {"actor": "user:devon@x"}
 
 
 def _pending(client, db):
-    auth.settings.m2m_token = "t"
+    auth.settings.m2m_token = hashed("full", "t")
     client.post("/api/sync", json=BODY, headers=H)
     return db.query(ChangeItem).one().id
 
