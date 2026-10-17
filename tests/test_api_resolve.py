@@ -2,13 +2,14 @@ from datetime import UTC, datetime
 
 import app.auth as auth
 from app.models import ChangeEvent, ChangeItem
+from tests.bearer_settings import hashed
 
 H = {"Authorization": "Bearer t"}
 DEC = {"actor": "user:devon@x", "detail": "veritok secret rotated by hand"}
 
 
 def _blocked(db) -> int:
-    auth.settings.m2m_token = "t"
+    auth.settings.m2m_token = hashed("full", "t")
     it = ChangeItem(
         identity="prod::rotation::vt1",
         instance="prod",
@@ -47,5 +48,5 @@ def test_resolve_records_event_with_detail(client, db):
 
 
 def test_resolve_404_for_missing_item(client, db):
-    auth.settings.m2m_token = "t"
+    auth.settings.m2m_token = hashed("full", "t")
     assert client.post("/api/items/9999/resolve", json=DEC, headers=H).status_code == 404

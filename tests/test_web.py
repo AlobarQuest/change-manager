@@ -1,5 +1,6 @@
 import app.web_auth as wa
 from app.models import ChangeEvent, ChangeItem
+from tests.bearer_settings import hashed
 
 SSO = {"X-authentik-email": "devon@x"}
 ESC = {
@@ -19,7 +20,7 @@ APIH = {"Authorization": "Bearer t"}
 def _seed(client):
     import app.auth as auth
 
-    auth.settings.m2m_token = "t"
+    auth.settings.m2m_token = hashed("full", "t")
     wa.settings.dev_user = ""
     client.post("/api/sync", json=BODY, headers=APIH)
 
@@ -125,7 +126,7 @@ def test_dashboard_source_filter(client):
     import app.auth as auth
     import app.web_auth as wa
 
-    auth.settings.m2m_token = "t"
+    auth.settings.m2m_token = hashed("full", "t")
     wa.settings.dev_user = ""
     client.post("/api/sync", json=BODY, headers=APIH)  # a drift item ("app1")
     client.post("/api/sync", json=ROT_BODY, headers=APIH)  # a rotation item ("bookingapp")

@@ -2,12 +2,13 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from app.auth import require_m2m
+from tests.bearer_settings import hashed
 
 
 def _app(token: str):
     import app.auth as a
 
-    a.settings.m2m_token = token  # set the expected token for the test
+    a.settings.m2m_token = hashed("full", token)
     app = FastAPI()
 
     @app.get("/protected", dependencies=[Depends(require_m2m)])
