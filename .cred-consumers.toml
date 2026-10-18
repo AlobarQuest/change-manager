@@ -42,7 +42,22 @@ disposition = "reissue"
   [[credential.consumer]]
   kind = "runtime-fetch"
   repo = "infraops-mcp-server"
-  ref = "scripts/drift-audit.sh (03:00) and scripts/change-window.sh (04:00)"
+  ref = "scripts/drift-audit.sh"
+  note = "launchd com.devon.infra-drift 03:00; Keychain Claude/BWS_ACCESS_TOKEN_INFRA_DRIFT (broad account); its change-manager calls (sync, security-drift run) only log a WARN on failure and the run still pings success, so no read shows it switched: a person attests it (orchestrator adapter change-manager-attested)"
+
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "infraops-mcp-server"
+  ref = "scripts/change-window.sh"
+  healthchecks_check = "Change Manager OPs Check"
+  note = "launchd com.devon.change-window 04:00; Keychain Claude/BWS_ACCESS_TOKEN_INFRA_DRIFT (broad account); an empty or refused bearer exits 1 and pings /fail; Healthchecks check Change Manager OPs Check (slug operations-check)"
+
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "security-standards"
+  ref = "scripts/factory-events-nightly.sh"
+  healthchecks_check = "factory-events"
+  note = "deployed to ~/.claude/bin; launchd com.devon.factory-events 03:30; Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account), fetched after /start, empty exits 1 and pings /fail; Healthchecks check factory-events (slug factory-events)"
 
 [[credential]]
 id = "change-manager-read-bearer"
@@ -70,7 +85,30 @@ disposition = "reissue"
   [[credential.consumer]]
   kind = "runtime-fetch"
   repo = "orchestrator"
-  ref = "scripts/run-estate-landing.sh, run-bump-proposer.sh, run-inert-landing.sh, run-work-carrier.sh"
+  ref = "scripts/run-estate-landing.sh"
+  healthchecks_check = "sds-estate-landing"
+  note = "launchd com.devon.estate-landing 02:15, 03:15, 04:15, 05:15; Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-estate-landing"
+
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "orchestrator"
+  ref = "scripts/run-inert-landing.sh"
+  healthchecks_check = "sds-inert-landing"
+  note = "launchd com.devon.inert-landing hourly at :35; Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-inert-landing"
+
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "orchestrator"
+  ref = "scripts/run-bump-proposer.sh"
+  healthchecks_check = "sds-bump-proposer"
+  note = "launchd com.devon.bump-proposer 06:50 (fetched on every run); Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-bump-proposer"
+
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "orchestrator"
+  ref = "scripts/run-work-carrier.sh"
+  healthchecks_check = "sds-work-carrier"
+  note = "launchd com.devon.work-carrier 07:05 (fetched on every run); Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-work-carrier"
 
 [[credential]]
 id = "change-manager-propose-bearer"
@@ -98,7 +136,30 @@ disposition = "reissue"
   [[credential.consumer]]
   kind = "runtime-fetch"
   repo = "orchestrator"
-  ref = "scripts/run-bump-proposer.sh, run-change-proposer.sh, run-rotation-proposer.sh, run-work-carrier.sh"
+  ref = "scripts/run-bump-proposer.sh"
+  healthchecks_check = "sds-bump-proposer"
+  note = "launchd com.devon.bump-proposer 06:50 (--submit; fetched only by a writing run); Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-bump-proposer"
+
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "orchestrator"
+  ref = "scripts/run-change-proposer.sh"
+  healthchecks_check = "sds-change-proposer"
+  note = "launchd com.devon.change-proposer hourly (--submit; fetched only by a writing run); Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-change-proposer"
+
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "orchestrator"
+  ref = "scripts/run-rotation-proposer.sh"
+  healthchecks_check = "sds-rotation-proposer"
+  note = "launchd com.devon.rotation-proposer 06:30 (--submit; fetched only by a writing run); Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-rotation-proposer"
+
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "orchestrator"
+  ref = "scripts/run-work-carrier.sh"
+  healthchecks_check = "sds-work-carrier"
+  note = "launchd com.devon.work-carrier 07:05 (--register; fetched only by a registering run); Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-work-carrier"
 
 [[credential]]
 id = "change-manager-observe-bearer"
@@ -127,3 +188,5 @@ disposition = "reissue"
   kind = "runtime-fetch"
   repo = "orchestrator"
   ref = "scripts/run-deploy-watcher.sh"
+  healthchecks_check = "sds-deploy-watcher"
+  note = "launchd com.devon.deploy-watcher hourly; Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-deploy-watcher"
