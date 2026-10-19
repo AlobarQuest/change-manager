@@ -28,7 +28,7 @@ disposition = "reissue"
   [[credential.consumer]]
   kind = "bws-secret"
   uuid = "af0e4192-edc6-46ae-9e4f-b469011dbb8d"
-  note = "change-manager/M2M_TOKEN (Ops / Platform) — keeper"
+  note = "change-manager/M2M_TOKEN (Rotation / Keepers) — keeper"
 
   [[credential.consumer]]
   kind = "coolify-env-hash"
@@ -71,7 +71,7 @@ disposition = "reissue"
   [[credential.consumer]]
   kind = "bws-secret"
   uuid = "314f276d-55ca-4ddc-a24d-b4a3013508cd"
-  note = "change-manager/M2M_TOKEN_READ (Ops / Platform) — keeper"
+  note = "change-manager/M2M_TOKEN_READ (Rotation / Keepers) — keeper"
 
   [[credential.consumer]]
   kind = "coolify-env-hash"
@@ -122,7 +122,7 @@ disposition = "reissue"
   [[credential.consumer]]
   kind = "bws-secret"
   uuid = "acccb346-4baa-43ec-a1d4-b4a400c048ee"
-  note = "change-manager/M2M_TOKEN_PROPOSE (Ops / Platform) — keeper"
+  note = "change-manager/M2M_TOKEN_PROPOSE (Rotation / Keepers) — keeper"
 
   [[credential.consumer]]
   kind = "coolify-env-hash"
@@ -173,7 +173,7 @@ disposition = "reissue"
   [[credential.consumer]]
   kind = "bws-secret"
   uuid = "3b9503da-eb7e-401d-b4a7-b4a400c07efb"
-  note = "change-manager/M2M_TOKEN_OBSERVE (Ops / Platform) — keeper"
+  note = "change-manager/M2M_TOKEN_OBSERVE (Rotation / Keepers) — keeper"
 
   [[credential.consumer]]
   kind = "coolify-env-hash"
