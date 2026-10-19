@@ -23,7 +23,7 @@ in place would silently change what every past approval meant, which is the fail
 exists to prevent.
 
 WHERE A SUPERSEDED VERSION GOES. This module holds only the version in force and the terms it still
-carries; versions 1 to 9 live verbatim in `app.deploy_policy_history`, with `REGISTRY` and
+carries; versions 1 to 10 live verbatim in `app.deploy_policy_history`, with `REGISTRY` and
 `policy_for`. A bump moves the outgoing version there unedited, keeps here any term the new version
 still carries (named for the version that introduced it), and has the history module import that
 term rather than copy it. The import runs one way, history to this module, so nothing a live path
@@ -116,7 +116,8 @@ DEPENDABOT: Final = "dependabot[bot]"
 # `github-actions[bot]` is the identity of ANY workflow in a repository, so declaring it would
 # grant this lane to every workflow-authored pull request there rather than to the sync. As of
 # 2026-10-19 the App is installed on three forks -- rtk, claude-octopus and rea. Where it may land
-# is bounded by `InertLanding.repositories`, not by this name: rea is not declared there.
+# is bounded by `InertLanding.repositories`, not by this name: version 10 did not declare rea
+# there, and version 11 does.
 FORK_SECURE_UPSTREAM_SYNC: Final = "fork-secure-upstream-sync[bot]"
 
 
@@ -307,7 +308,7 @@ class DeployPolicy:
 # Terms introduced by a superseded version and still in force under the current one.
 # ---------------------------------------------------------------------------
 #
-# Each is named for the version that introduced it. The versions themselves -- 1 to 9 -- are
+# Each is named for the version that introduced it. The versions themselves -- 1 to 10 -- are
 # retained verbatim in `app.deploy_policy_history`, which imports these rather than holding a
 # second transcription of one judgment.
 
@@ -480,13 +481,12 @@ _V9_LANDING: Final = LandingConditions(
 
 
 # ---------------------------------------------------------------------------
-# Version 10 -- the version in force.
+# Version 11 -- the version in force.
 # ---------------------------------------------------------------------------
 
-# VERSION 7'S INERT POPULATION AND TERMS, with the sync author's login renamed and nothing else
-# moved. The same eight repositories, the same exclusion, the same freshness condition, and one
-# exempted author, as before -- the same App, under the name GitHub now serves for it.
-_V10_INERT: Final = InertLanding(
+# VERSION 10'S INERT POPULATION AND TERMS, with one more fork. The same authors, the same
+# exclusion, the same freshness condition and the same exempted author.
+_V11_INERT: Final = InertLanding(
     repositories=frozenset(
         {
             "alobarquest/orchestrator",
@@ -495,11 +495,12 @@ _V10_INERT: Final = InertLanding(
             "alobarquest/infraops-mcp-server",
             "alobarquest/project-standards",
             "alobarquest/factory-runner",
-            # The two forks, added by version 7. Both answer `landing: "inert"` in App Brain. The
-            # sync App's installation also reaches `alobarquest/rea` since 2026-10-19; it is NOT
-            # declared here, so a pull request there is refused on its repository whoever wrote it.
+            # The two forks version 7 added. Both answer `landing: "inert"` in App Brain.
             "alobarquest/rtk",
             "alobarquest/claude-octopus",
+            # Added by version 11, 2026-10-19. A fork of morluto/rea, a tool installed on the
+            # operator's machine; it answers `landing: "inert"` in App Brain.
+            "alobarquest/rea",
         }
     ),
     permitted_authors=frozenset({DEPENDABOT, FORK_SECURE_UPSTREAM_SYNC}),
@@ -507,46 +508,49 @@ _V10_INERT: Final = InertLanding(
     require_head_current_with_base=True,
     non_ecosystem_authors=frozenset({FORK_SECURE_UPSTREAM_SYNC}),
     rationale=(
-        "The rule ADR-0038 declared, over the eight repositories and two authors version 7 "
-        "admitted, with one author's login renamed. "
-        "WHAT CHANGED. The App that opens both forks' upstream-sync pull requests -- App id "
-        "4094707 -- was renamed on 2026-10-19 from `octo-upstream-sync` to "
-        "`fork-secure-upstream-sync`. GitHub renamed its bot user with it: the user id is "
-        "unchanged, `pull_request.user.login` now answers `fork-secure-upstream-sync[bot]`, and "
-        "the old login answers 404. This block permits by NAME, so from the rename until this "
-        "version every sync pull request was refused on its author. "
-        "NOTHING IS WIDENED. It is the same App and the same installation, so the author this "
-        "block names is the identity versions 7 to 9 decided to permit, under the name GitHub "
-        "now serves. The repositories, the docker exclusion, the freshness condition and the "
-        "ADR-0041 exemption are unchanged; the exemption names the same App by its new login, "
-        "and Dependabot keeps the ecosystem bound in every term. "
-        "WHY NOT `github-actions[bot]`, still: that is the identity of ANY workflow in a "
-        "repository, so permitting it would grant this lane to every workflow-authored pull "
-        "request there rather than to the sync. "
-        "WHAT THIS VERSION DOES NOT ADMIT. The App's installation now also reaches "
-        "`alobarquest/rea`. That repository is not in this population, so the author condition "
-        "does not reach it: a pull request there is refused on its repository. Admitting it is a "
-        "separate decision, for a later version, once it carries required checks. "
-        "The deploying population and every term keyed off it are version 9's objects, "
+        "The rule ADR-0038 declared, over the eight repositories version 10 named and one more "
+        "fork, with the same two authors. "
+        "WHAT IS ADDED. alobarquest/rea is the operator's fork of morluto/rea, a reverse-"
+        "engineering command-line tool and MCP server that the orchestrator's tool-installer "
+        "lane installs on the operator's machine. Nothing serves from it, so landing on its "
+        "default branch changes nothing already serving, which is this population's whole "
+        "criterion. Its default branch was rebuilt at upstream release `rea-agents-6.6.0` with "
+        "upstream's whole `.github/` removed, then onboarded with the orchestrator's fork-sync "
+        "tool, so its upstream-sync pull requests are opened by the same App, App id 4094707, "
+        "under the login version 10 named. "
+        "WHAT `CLEAN` MEANS THERE, which is what this version rests on, as version 7 rested on "
+        "the forks' gates. Two checks are required on main, both pinned to GitHub Actions: "
+        "`build and test` installs with `npm ci --ignore-scripts` and runs the configured build "
+        "and tests; `security review` is a fail-closed review that reads its gate from the BASE "
+        "branch. It reports deterministic findings for watched paths, binaries, submodule "
+        "pointers, npm lifecycle scripts, `bin` entries, `.npmrc` and non-registry dependencies, "
+        "lockfile sources, integrity and install scripts, and `npm audit --audit-level=high`, "
+        "and adds a model review of the full diff. Any unacknowledged finding, or a review that "
+        "could not run, fails the check. "
+        "rtk now carries the same two required checks, which makes the gate version 7 relied on "
+        "there stronger than the one it described. "
+        "NOTHING ELSE IS WIDENED. The authors, the docker exclusion, the freshness condition and "
+        "the ADR-0041 exemption are version 10's. Dependabot keeps the ecosystem bound in every "
+        "term, and `github-actions[bot]` is still not an author, because it is the identity of "
+        "ANY workflow in a repository. "
+        "The deploying population and every term keyed off it are version 10's objects, "
         "unchanged. The two populations remain disjoint."
     ),
 )
 
 
-V10: Final = DeployPolicy(
-    version=10,
+V11: Final = DeployPolicy(
+    version=11,
     decided="2026-10-19",
     rationale=(
-        "Version 9's populations and terms, with the inert lane's sync author renamed. Nothing "
-        "is widened: the same two deploying repositories, the same two change classes, the same "
-        "risk, the same criteria, the same remedies, the same rollout pins, the same conditions "
-        "on the act, and the same eight inert repositories. "
-        "WHY IT EXISTS. The GitHub App that opens the forks' upstream-sync pull requests, App id "
-        "4094707, was renamed from `octo-upstream-sync` to `fork-secure-upstream-sync` on "
-        "2026-10-19, and GitHub renamed its bot user with it. The inert lane permits authors by "
-        "login, so it began refusing the sync pull requests on rtk and claude-octopus. The App "
-        "and its installation are the same; only the name moved. "
-        "The installation now also reaches alobarquest/rea, which this version does not admit."
+        "Version 10's populations and terms, with one repository added to the inert lane: "
+        "alobarquest/rea. Nothing else is widened: the same two deploying repositories, the same "
+        "two change classes, the same risk, the same criteria, the same remedies, the same "
+        "rollout pins, the same conditions on the act, and the same inert authors and terms. "
+        "WHY IT EXISTS. rea is the operator's fork of morluto/rea, onboarded with the "
+        "orchestrator's fork-sync tool, and it now carries two required checks on main, "
+        "`build and test` and `security review`. Those are what a clean pull request there "
+        "means, and they are what version 10 said rea needed before it could be admitted."
     ),
     repositories=frozenset({"alobarquest/change-manager", "alobarquest/brain"}),
     change_classes=frozenset({"dependency-update", "factory-delivery"}),
@@ -559,17 +563,18 @@ V10: Final = DeployPolicy(
         "alobarquest/change-manager": _V1_CHANGE_MANAGER_ROLLBACK,
         "alobarquest/brain": _V3_BRAIN_ROLLBACK,
     },
-    # The SAME OBJECT version 9 declared: this version makes no statement about the deploying lane.
+    # The SAME OBJECT versions 9 and 10 declared: this version makes no statement about the
+    # deploying lane.
     landing=_V9_LANDING,
-    inert_landing=_V10_INERT,
+    inert_landing=_V11_INERT,
 )
 
 
-CURRENT_VERSION: Final = 10
+CURRENT_VERSION: Final = 11
 
 
 def current() -> DeployPolicy:
-    return V10
+    return V11
 
 
 def objections(policy: DeployPolicy, item: object) -> tuple[str, ...]:

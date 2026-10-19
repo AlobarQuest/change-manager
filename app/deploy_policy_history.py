@@ -1,7 +1,7 @@
 """Every SUPERSEDED deploy-policy version, retained verbatim.
 
 `app.deploy_policy` holds the version in force and everything it still carries; this module holds
-versions 1 to 9, which no live path reads. They are kept because a record stores the number of
+versions 1 to 10, which no live path reads. They are kept because a record stores the number of
 the version that approved it, and re-evaluating that approval later means looking the old version
 up and finding what it actually said -- the editing contract in `app.deploy_policy`'s header. A
 superseded version is never edited, here or anywhere.
@@ -30,9 +30,10 @@ from app.deploy_policy import (
     _V9_LANDING,
     DEPENDABOT,
     DOCKER,
+    FORK_SECURE_UPSTREAM_SYNC,
     SEMVER_MINOR,
     SEMVER_PATCH,
-    V10,
+    V11,
     DeployPolicy,
     InertLanding,
     LandingConditions,
@@ -887,10 +888,96 @@ V9: Final = DeployPolicy(
 )
 
 
+# ---------------------------------------------------------------------------
+# Version 10 -- Devon, 2026-10-19.
+# ---------------------------------------------------------------------------
+
+# VERSION 7'S INERT POPULATION AND TERMS, with the sync author's login renamed and nothing else
+# moved. The same eight repositories, the same exclusion, the same freshness condition, and one
+# exempted author, as before -- the same App, under the name GitHub now serves for it.
+_V10_INERT: Final = InertLanding(
+    repositories=frozenset(
+        {
+            "alobarquest/orchestrator",
+            "alobarquest/intent-packages",
+            "alobarquest/security-standards",
+            "alobarquest/infraops-mcp-server",
+            "alobarquest/project-standards",
+            "alobarquest/factory-runner",
+            # The two forks, added by version 7. Both answer `landing: "inert"` in App Brain. The
+            # sync App's installation also reaches `alobarquest/rea` since 2026-10-19; it is NOT
+            # declared here, so a pull request there is refused on its repository whoever wrote it.
+            "alobarquest/rtk",
+            "alobarquest/claude-octopus",
+        }
+    ),
+    permitted_authors=frozenset({DEPENDABOT, FORK_SECURE_UPSTREAM_SYNC}),
+    excluded_ecosystems=frozenset({DOCKER}),
+    require_head_current_with_base=True,
+    non_ecosystem_authors=frozenset({FORK_SECURE_UPSTREAM_SYNC}),
+    rationale=(
+        "The rule ADR-0038 declared, over the eight repositories and two authors version 7 "
+        "admitted, with one author's login renamed. "
+        "WHAT CHANGED. The App that opens both forks' upstream-sync pull requests -- App id "
+        "4094707 -- was renamed on 2026-10-19 from `octo-upstream-sync` to "
+        "`fork-secure-upstream-sync`. GitHub renamed its bot user with it: the user id is "
+        "unchanged, `pull_request.user.login` now answers `fork-secure-upstream-sync[bot]`, and "
+        "the old login answers 404. This block permits by NAME, so from the rename until this "
+        "version every sync pull request was refused on its author. "
+        "NOTHING IS WIDENED. It is the same App and the same installation, so the author this "
+        "block names is the identity versions 7 to 9 decided to permit, under the name GitHub "
+        "now serves. The repositories, the docker exclusion, the freshness condition and the "
+        "ADR-0041 exemption are unchanged; the exemption names the same App by its new login, "
+        "and Dependabot keeps the ecosystem bound in every term. "
+        "WHY NOT `github-actions[bot]`, still: that is the identity of ANY workflow in a "
+        "repository, so permitting it would grant this lane to every workflow-authored pull "
+        "request there rather than to the sync. "
+        "WHAT THIS VERSION DOES NOT ADMIT. The App's installation now also reaches "
+        "`alobarquest/rea`. That repository is not in this population, so the author condition "
+        "does not reach it: a pull request there is refused on its repository. Admitting it is a "
+        "separate decision, for a later version, once it carries required checks. "
+        "The deploying population and every term keyed off it are version 9's objects, "
+        "unchanged. The two populations remain disjoint."
+    ),
+)
+
+
+V10: Final = DeployPolicy(
+    version=10,
+    decided="2026-10-19",
+    rationale=(
+        "Version 9's populations and terms, with the inert lane's sync author renamed. Nothing "
+        "is widened: the same two deploying repositories, the same two change classes, the same "
+        "risk, the same criteria, the same remedies, the same rollout pins, the same conditions "
+        "on the act, and the same eight inert repositories. "
+        "WHY IT EXISTS. The GitHub App that opens the forks' upstream-sync pull requests, App id "
+        "4094707, was renamed from `octo-upstream-sync` to `fork-secure-upstream-sync` on "
+        "2026-10-19, and GitHub renamed its bot user with it. The inert lane permits authors by "
+        "login, so it began refusing the sync pull requests on rtk and claude-octopus. The App "
+        "and its installation are the same; only the name moved. "
+        "The installation now also reaches alobarquest/rea, which this version does not admit."
+    ),
+    repositories=frozenset({"alobarquest/change-manager", "alobarquest/brain"}),
+    change_classes=frozenset({"dependency-update", "factory-delivery"}),
+    risks=frozenset({"caution"}),
+    acceptance_criteria={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_CRITERIA,
+        "alobarquest/brain": _V8_BRAIN_CRITERIA,
+    },
+    rollback_plans={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_ROLLBACK,
+        "alobarquest/brain": _V3_BRAIN_ROLLBACK,
+    },
+    # The SAME OBJECT version 9 declared: this version makes no statement about the deploying lane.
+    landing=_V9_LANDING,
+    inert_landing=_V10_INERT,
+)
+
+
 # Every version ever, retained. A record stores the number that approved it, so an approval stays
 # re-evaluable after the policy has moved on.
 REGISTRY: Final[dict[int, DeployPolicy]] = {
-    policy.version: policy for policy in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10)
+    policy.version: policy for policy in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11)
 }
 
 
