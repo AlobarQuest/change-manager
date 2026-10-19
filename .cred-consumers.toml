@@ -169,6 +169,10 @@ provider_identity = "OBSERVE scope (M2M_TOKEN_OBSERVE)"
 bws_uuid = "3b9503da-eb7e-401d-b4a7-b4a400c07efb"
 created = "2026-08-12"
 disposition = "reissue"
+# Handed to the rotation executor 2026-10-19 (orchestrator ADR-0055 increment 6; intent-packages
+# rotation-change-manager-observe-bearer rev 1, approved by Devon 2026-10-19).
+rotated_by_sds = true
+rotate_requested = "2026-10-19"
 
   [[credential.consumer]]
   kind = "bws-secret"
