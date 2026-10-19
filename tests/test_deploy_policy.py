@@ -416,7 +416,7 @@ def test_the_current_version_pins_the_rollout_workflow_of_every_repository_it_na
     """A repository the policy admits with no pinned workflow is a repository whose criteria
     describe bytes nobody named, which is the hole this version exists to close."""
     policy = current()
-    assert CURRENT_VERSION == 10
+    assert CURRENT_VERSION == 11
     for repository in policy.repositories:
         pin = policy.landing.rollout_workflows.get(repository)
         assert pin is not None, f"{repository} is admitted with no rollout-workflow pin"
@@ -500,7 +500,7 @@ def test_the_two_version_fields_are_not_the_same_question(client, m2m, db):
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 1
-    assert served["landing_policy_version"] == CURRENT_VERSION == 10
+    assert served["landing_policy_version"] == CURRENT_VERSION == 11
 
 
 def test_a_drift_record_carries_no_landing_conditions(client, m2m, db):
@@ -1563,9 +1563,10 @@ def test_the_policy_route_serves_the_inert_population(client, m2m):
     assert body["inert_landing"]["rationale"] == declared.rationale
     assert "ADR-0038" in body["inert_landing"]["rationale"]
     assert "alobarquest/factory-runner" in body["inert_landing"]["repositories"]
-    assert len(body["inert_landing"]["repositories"]) == 8
+    assert len(body["inert_landing"]["repositories"]) == 9
     assert "alobarquest/rtk" in body["inert_landing"]["repositories"]
     assert "alobarquest/claude-octopus" in body["inert_landing"]["repositories"]
+    assert "alobarquest/rea" in body["inert_landing"]["repositories"]
 
     # The deploying half of the same response, unchanged and beside it -- so a change that served
     # the new block by displacing the old one fails here rather than in production.
@@ -1743,7 +1744,8 @@ def test_version_ten_renames_only_the_sync_author():
     """
     v9, v10 = policy_for(9), policy_for(10)
     assert v9 is not None and v10 is not None
-    assert v10 is current()
+    # NOT `v10 is current()` since 2026-10-19: this test's subject is what version 10 claimed
+    # about version 9, and that claim is retained and still true after version 11 superseded it.
 
     # The deploying half: the SAME objects, because this version makes no statement about it.
     assert v10.repositories == v9.repositories
@@ -1771,3 +1773,38 @@ def test_version_ten_renames_only_the_sync_author():
     # The App's installation reaches rea too, and this version does not admit it.
     assert "alobarquest/rea" not in ten.repositories
     assert "ADR-0038" in ten.rationale
+
+
+def test_version_eleven_adds_only_rea_to_the_inert_population():
+    """Version 11's whole claim, asserted term by term against the one it supersedes.
+
+    One repository added to the inert lane -- the operator's fork of morluto/rea, now gated by two
+    required checks on main -- and nothing else moved. A version that quietly widened an author,
+    an exemption, an exclusion or anything in the deploying half while wearing this rationale
+    fails here.
+    """
+    v10, v11 = policy_for(10), policy_for(11)
+    assert v10 is not None and v11 is not None
+    assert v11 is current()
+
+    # The deploying half: the SAME objects, because this version makes no statement about it.
+    assert v11.repositories == v10.repositories
+    assert v11.change_classes == v10.change_classes
+    assert v11.risks == v10.risks
+    assert v11.landing is v10.landing
+    for repository in (CHANGE_MANAGER, BRAIN):
+        assert v11.acceptance_criteria[repository] is v10.acceptance_criteria[repository]
+        assert v11.rollback_plans[repository] is v10.rollback_plans[repository]
+
+    ten, eleven = v10.inert_landing, v11.inert_landing
+    assert ten is not None and eleven is not None
+    assert eleven.repositories == ten.repositories | {"alobarquest/rea"}
+    assert "alobarquest/rea" not in ten.repositories
+    assert eleven.permitted_authors == ten.permitted_authors
+    assert eleven.non_ecosystem_authors == ten.non_ecosystem_authors
+    assert eleven.excluded_ecosystems == ten.excluded_ecosystems
+    assert eleven.require_head_current_with_base == ten.require_head_current_with_base
+
+    # The two populations stay disjoint.
+    assert not eleven.repositories & v11.repositories
+    assert "ADR-0038" in eleven.rationale
