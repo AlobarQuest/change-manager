@@ -1,14 +1,14 @@
 """Every SUPERSEDED deploy-policy version, retained verbatim.
 
 `app.deploy_policy` holds the version in force and everything it still carries; this module holds
-versions 1 to 8, which no live path reads. They are kept because a record stores the number of
+versions 1 to 9, which no live path reads. They are kept because a record stores the number of
 the version that approved it, and re-evaluating that approval later means looking the old version
 up and finding what it actually said -- the editing contract in `app.deploy_policy`'s header. A
 superseded version is never edited, here or anywhere.
 
 WHICH WAY THE IMPORT RUNS, AND WHY. This module imports from `app.deploy_policy` and never the
 reverse. Terms a superseded version shares with the current one -- change-manager's criteria and
-remedy, brain's remedy, version 5's conditions on the act, version 7's inert population -- are
+remedy, brain's remedy and criteria, version 5's and version 9's conditions on the act -- are
 defined once, beside the current version, and imported here, so every "the same object, not a
 copy" note below stays literally true. What lives only here is what no version in force still
 says.
@@ -26,13 +26,13 @@ from app.deploy_policy import (
     _V1_CHANGE_MANAGER_ROLLBACK,
     _V3_BRAIN_ROLLBACK,
     _V5_LANDING,
-    _V7_INERT,
     _V8_BRAIN_CRITERIA,
+    _V9_LANDING,
     DEPENDABOT,
     DOCKER,
     SEMVER_MINOR,
     SEMVER_PATCH,
-    V9,
+    V10,
     DeployPolicy,
     InertLanding,
     LandingConditions,
@@ -698,8 +698,67 @@ V6: Final = DeployPolicy(
 # Version 7 -- Devon, 2026-09-05.
 # ---------------------------------------------------------------------------
 
-# `_V7_INERT` is still in force under the current version, so it lives in `app.deploy_policy`
-# and is imported here -- the same object, not a copy.
+# `OCTO_UPSTREAM_SYNC` and `_V7_INERT` were in force from version 7 to version 9, and lived in
+# `app.deploy_policy` until version 10 renamed the sync author. Moved here unedited.
+
+# The App that authors both forks' upstream-sync pull requests, in the REST spelling -- which is
+# what the landing party compares against. `gh` answers `app/octo-upstream-sync` for the same
+# account, and that is NOT this string. App id 4094707, installed on the two forks and nowhere
+# else. Chosen over `github-actions[bot]` on 2026-09-05 precisely because this list permits by
+# NAME: `github-actions[bot]` is the identity of ANY workflow in a repository, so declaring it
+# would grant this lane to every workflow-authored pull request there rather than to the sync.
+OCTO_UPSTREAM_SYNC: Final = "octo-upstream-sync[bot]"
+
+
+_V7_INERT: Final = InertLanding(
+    repositories=frozenset(
+        {
+            "alobarquest/orchestrator",
+            "alobarquest/intent-packages",
+            "alobarquest/security-standards",
+            "alobarquest/infraops-mcp-server",
+            "alobarquest/project-standards",
+            "alobarquest/factory-runner",
+            # The two forks, added 2026-09-05. Both answer `landing: "inert"` in App Brain --
+            # rtk determined 2026-09-02, claude-octopus 2026-08-02 -- so landing on their default
+            # branches changes nothing already serving, which is this population's whole criterion.
+            "alobarquest/rtk",
+            "alobarquest/claude-octopus",
+        }
+    ),
+    permitted_authors=frozenset({DEPENDABOT, OCTO_UPSTREAM_SYNC}),
+    excluded_ecosystems=frozenset({DOCKER}),
+    require_head_current_with_base=True,
+    non_ecosystem_authors=frozenset({OCTO_UPSTREAM_SYNC}),
+    rationale=(
+        "The same rule ADR-0038 declared, over two more repositories and one more author. "
+        "Both forks carry a daily "
+        "workflow that syncs an upstream release, reviews it, hardens it and opens ONE rolling "
+        "pull request -- and until 2026-09-05 nothing landed it. rtk's sat open from 2026-06-29 "
+        "while its contents were refreshed daily; the operator was six minor versions behind the "
+        "release his own lane had already reviewed. "
+        "WHAT MADE THEM ADMISSIBLE IS NOT THIS VERSION. Both were repositories where a pull "
+        "request read `mergeable_state: CLEAN` only because NOTHING COULD FAIL -- rtk had one "
+        "workflow, the sync itself, and neither fork had a required status check. Each now has a "
+        "gate that reports on every pull request and is required on `main`: rtk's `build and "
+        "test` builds and tests the merged tree, claude-octopus's `hardening and syntax` runs the "
+        "hardener's own self-test and parses every file that becomes a hook on the operator's "
+        "machine. Those are what `CLEAN` now means there, and this version rests on them. "
+        "THE AUTHOR IS `octo-upstream-sync[bot]` AND NOT `github-actions[bot]`, which is a choice "
+        "and not a detail. rtk's sync authenticated as `GITHUB_TOKEN` until 2026-09-05, so its "
+        "author was the identity of ANY workflow in that repository; permitting it would have "
+        "granted this lane to every workflow-authored pull request there. The sync now mints a "
+        "token from an App installed on the two forks and nowhere else. "
+        "AN UPSTREAM SYNC IS NOT A BUMP, which is why it is named in `non_ecosystem_authors`. It "
+        "states no version delta and belongs to no package ecosystem, so the ecosystem exclusion "
+        "has no purchase on it -- asking is the wrong question rather than one it failed to "
+        "answer. ADR-0041 (orchestrator) decided that the exemption is DECLARED here rather than "
+        "inferred from a branch name, because inferring it would let any branch name switch the "
+        "ecosystem bound off. Dependabot keeps that bound in every term. "
+        "The deploying population and every term keyed off it are the objects version 5 declared "
+        "and version 6 carried, unchanged. The two populations remain disjoint."
+    ),
+)
 
 V7: Final = DeployPolicy(
     version=7,
@@ -791,10 +850,47 @@ V8: Final = DeployPolicy(
 )
 
 
+# ---------------------------------------------------------------------------
+# Version 9 -- Devon, 2026-09-28.
+# ---------------------------------------------------------------------------
+
+V9: Final = DeployPolicy(
+    version=9,
+    decided="2026-09-28",
+    rationale=(
+        "Version 8's populations and terms, with both rollout workflows re-pinned. Nothing is "
+        "widened: the same two repositories, the same two change classes, the same risk, the "
+        "same criteria, the same remedies, the same conditions on the act. "
+        "WHY IT EXISTS. Both repositories moved to Python 3.14, which edited the setup steps of "
+        "each rollout workflow and so moved both blobs. A pin left on the old bytes would refuse "
+        "every landing at the act. "
+        "WHAT WAS READ BEFORE RATIFYING. In both workflows the production job's trigger step and "
+        "verify step are byte-identical to the revisions version 8 pinned, and the producer "
+        "derives the same criteria text from the new bytes as from the old. So what a green "
+        "rollout proves is unchanged, and so are the criteria and the remedy attached to them."
+    ),
+    repositories=frozenset({"alobarquest/change-manager", "alobarquest/brain"}),
+    change_classes=frozenset({"dependency-update", "factory-delivery"}),
+    risks=frozenset({"caution"}),
+    acceptance_criteria={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_CRITERIA,
+        "alobarquest/brain": _V8_BRAIN_CRITERIA,
+    },
+    rollback_plans={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_ROLLBACK,
+        "alobarquest/brain": _V3_BRAIN_ROLLBACK,
+    },
+    landing=_V9_LANDING,
+    # The SAME OBJECT versions 7 and 8 declared: this version makes no statement about the inert
+    # lane.
+    inert_landing=_V7_INERT,
+)
+
+
 # Every version ever, retained. A record stores the number that approved it, so an approval stays
 # re-evaluable after the policy has moved on.
 REGISTRY: Final[dict[int, DeployPolicy]] = {
-    policy.version: policy for policy in (V1, V2, V3, V4, V5, V6, V7, V8, V9)
+    policy.version: policy for policy in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10)
 }
 
 
