@@ -28,15 +28,15 @@ from app.deploy_policy import (
     CURRENT_VERSION,
     DEPENDABOT,
     DOCKER,
+    FORK_SECURE_UPSTREAM_SYNC,
     GITHUB_ACTIONS,
-    OCTO_UPSTREAM_SYNC,
     current,
     inert_landing_dict,
     landing_conditions_dict,
     objections,
     policy_dict,
 )
-from app.deploy_policy_history import REGISTRY, policy_for
+from app.deploy_policy_history import OCTO_UPSTREAM_SYNC, REGISTRY, policy_for
 from app.models import ChangeEvent, ChangeItem
 from app.schemas import DeployChangeIn
 from app.transitions import TransitionError, decide
@@ -416,7 +416,7 @@ def test_the_current_version_pins_the_rollout_workflow_of_every_repository_it_na
     """A repository the policy admits with no pinned workflow is a repository whose criteria
     describe bytes nobody named, which is the hole this version exists to close."""
     policy = current()
-    assert CURRENT_VERSION == 9
+    assert CURRENT_VERSION == 10
     for repository in policy.repositories:
         pin = policy.landing.rollout_workflows.get(repository)
         assert pin is not None, f"{repository} is admitted with no rollout-workflow pin"
@@ -500,7 +500,7 @@ def test_the_two_version_fields_are_not_the_same_question(client, m2m, db):
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 1
-    assert served["landing_policy_version"] == CURRENT_VERSION == 9
+    assert served["landing_policy_version"] == CURRENT_VERSION == 10
 
 
 def test_a_drift_record_carries_no_landing_conditions(client, m2m, db):
@@ -1382,7 +1382,11 @@ def test_the_inert_lane_permits_the_update_bot_and_nobody_else():
     # TWO since version 7, and still an EXACT set for the reason above. The second is the App
     # that opens both forks' upstream-sync pull requests; the version-7 rationale records why it
     # is that App and not `github-actions[bot]`, whose name would admit any workflow's output.
-    assert inert.permitted_authors == frozenset({"dependabot[bot]", "octo-upstream-sync[bot]"})
+    # Version 10 spells it by the login GitHub serves since the App was renamed on 2026-10-19.
+    assert FORK_SECURE_UPSTREAM_SYNC == "fork-secure-upstream-sync[bot]"
+    assert inert.permitted_authors == frozenset(
+        {"dependabot[bot]", "fork-secure-upstream-sync[bot]"}
+    )
 
 
 def test_a_declared_inert_population_PERMITS_SOMEBODY_AND_NOT_EVERYBODY():
@@ -1404,8 +1408,10 @@ def test_a_declared_inert_population_PERMITS_SOMEBODY_AND_NOT_EVERYBODY():
         # those two repositories and nowhere else. Deliberately NOT `github-actions[bot]`, which
         # is the identity of ANY workflow in a repository -- permitting it would grant this lane
         # to every workflow-authored pull request there, which is precisely the "any bot" shape
-        # this assertion exists to refuse.
-        decided = frozenset({DEPENDABOT, OCTO_UPSTREAM_SYNC})
+        # this assertion exists to refuse. `fork-secure-upstream-sync[bot]` is that SAME App
+        # (id 4094707) under the name it was given on 2026-10-19 -- version 10 decided the rename,
+        # and versions 7 to 9 keep the login they were decided with.
+        decided = frozenset({DEPENDABOT, OCTO_UPSTREAM_SYNC, FORK_SECURE_UPSTREAM_SYNC})
         assert inert.permitted_authors <= decided, (
             f"version {policy.version} permits an author nobody decided: "
             f"{sorted(inert.permitted_authors - decided)}"
@@ -1544,9 +1550,9 @@ def test_the_policy_route_serves_the_inert_population(client, m2m):
     assert body["version"] == CURRENT_VERSION
     assert body["inert_landing"]["permitted_authors"] == [
         "dependabot[bot]",
-        "octo-upstream-sync[bot]",
+        "fork-secure-upstream-sync[bot]",
     ]
-    assert body["inert_landing"]["non_ecosystem_authors"] == ["octo-upstream-sync[bot]"]
+    assert body["inert_landing"]["non_ecosystem_authors"] == ["fork-secure-upstream-sync[bot]"]
     assert body["inert_landing"]["excluded_ecosystems"] == ["docker"]
     assert body["inert_landing"]["require_head_current_with_base"] is True
 
@@ -1667,7 +1673,8 @@ def test_version_nine_re_pins_both_rollouts_and_nothing_else():
     """
     v8, v9 = policy_for(8), policy_for(9)
     assert v8 is not None and v9 is not None
-    assert v9 is current()
+    # NOT `v9 is current()` since 2026-10-19: this test's subject is what version 9 claimed about
+    # version 8, and that claim is retained and still true after version 10 superseded it.
 
     assert v9.repositories == v8.repositories
     assert v9.change_classes == v8.change_classes
@@ -1708,7 +1715,7 @@ def test_the_exemption_names_the_sync_app_and_never_the_update_bot():
     population this lane was built for."""
     inert = current().inert_landing
     assert inert is not None
-    assert inert.non_ecosystem_authors == frozenset({OCTO_UPSTREAM_SYNC})
+    assert inert.non_ecosystem_authors == frozenset({FORK_SECURE_UPSTREAM_SYNC})
     assert DEPENDABOT not in inert.non_ecosystem_authors
     # And every exempted author must be one the lane permits at all — an exemption for an author
     # this lane never sees would be a permission nobody could exercise and nobody decided.
@@ -1723,3 +1730,44 @@ def test_a_retained_version_serves_the_bytes_it_always_served():
     served = inert_landing_dict(six)
     assert served is not None
     assert "non_ecosystem_authors" not in served
+
+
+def test_version_ten_renames_only_the_sync_author():
+    """Version 10's whole claim, asserted term by term against the one it supersedes.
+
+    The App that opens the forks' upstream-sync pull requests (id 4094707) was renamed on
+    2026-10-19, and GitHub renamed its bot user with it. Version 10 swaps that one login in both
+    places version 7 named it, and moves nothing else. A version that quietly widened anything
+    while wearing this rationale fails here -- and so does one that kept the old login beside the
+    new, which would be a second author nobody decided rather than a rename.
+    """
+    v9, v10 = policy_for(9), policy_for(10)
+    assert v9 is not None and v10 is not None
+    assert v10 is current()
+
+    # The deploying half: the SAME objects, because this version makes no statement about it.
+    assert v10.repositories == v9.repositories
+    assert v10.change_classes == v9.change_classes
+    assert v10.risks == v9.risks
+    assert v10.landing is v9.landing
+    for repository in (CHANGE_MANAGER, BRAIN):
+        assert v10.acceptance_criteria[repository] is v9.acceptance_criteria[repository]
+        assert v10.rollback_plans[repository] is v9.rollback_plans[repository]
+
+    nine, ten = v9.inert_landing, v10.inert_landing
+    assert nine is not None and ten is not None
+    assert ten.repositories == nine.repositories
+    assert ten.excluded_ecosystems == nine.excluded_ecosystems
+    assert ten.require_head_current_with_base == nine.require_head_current_with_base
+
+    # The rename, and only the rename.
+    assert ten.permitted_authors == (nine.permitted_authors - {OCTO_UPSTREAM_SYNC}) | {
+        FORK_SECURE_UPSTREAM_SYNC
+    }
+    assert ten.non_ecosystem_authors == frozenset({FORK_SECURE_UPSTREAM_SYNC})
+    assert OCTO_UPSTREAM_SYNC not in ten.permitted_authors
+    assert OCTO_UPSTREAM_SYNC not in ten.non_ecosystem_authors
+
+    # The App's installation reaches rea too, and this version does not admit it.
+    assert "alobarquest/rea" not in ten.repositories
+    assert "ADR-0038" in ten.rationale
