@@ -33,7 +33,7 @@ from app.deploy_policy import (
     FORK_SECURE_UPSTREAM_SYNC,
     SEMVER_MINOR,
     SEMVER_PATCH,
-    V11,
+    V12,
     DeployPolicy,
     InertLanding,
     LandingConditions,
@@ -974,10 +974,100 @@ V10: Final = DeployPolicy(
 )
 
 
+# ---------------------------------------------------------------------------
+# Version 11 -- Devon, 2026-10-19.
+# ---------------------------------------------------------------------------
+
+# VERSION 10'S INERT POPULATION AND TERMS, with one more fork. The same authors, the same
+# exclusion, the same freshness condition and the same exempted author.
+_V11_INERT: Final = InertLanding(
+    repositories=frozenset(
+        {
+            "alobarquest/orchestrator",
+            "alobarquest/intent-packages",
+            "alobarquest/security-standards",
+            "alobarquest/infraops-mcp-server",
+            "alobarquest/project-standards",
+            "alobarquest/factory-runner",
+            # The two forks version 7 added. Both answer `landing: "inert"` in App Brain.
+            "alobarquest/rtk",
+            "alobarquest/claude-octopus",
+            # Added by version 11, 2026-10-19. A fork of morluto/rea, a tool installed on the
+            # operator's machine; it answers `landing: "inert"` in App Brain.
+            "alobarquest/rea",
+        }
+    ),
+    permitted_authors=frozenset({DEPENDABOT, FORK_SECURE_UPSTREAM_SYNC}),
+    excluded_ecosystems=frozenset({DOCKER}),
+    require_head_current_with_base=True,
+    non_ecosystem_authors=frozenset({FORK_SECURE_UPSTREAM_SYNC}),
+    rationale=(
+        "The rule ADR-0038 declared, over the eight repositories version 10 named and one more "
+        "fork, with the same two authors. "
+        "WHAT IS ADDED. alobarquest/rea is the operator's fork of morluto/rea, a reverse-"
+        "engineering command-line tool and MCP server that the orchestrator's tool-installer "
+        "lane installs on the operator's machine. Nothing serves from it, so landing on its "
+        "default branch changes nothing already serving, which is this population's whole "
+        "criterion. Its default branch was rebuilt at upstream release `rea-agents-6.6.0` with "
+        "upstream's whole `.github/` removed, then onboarded with the orchestrator's fork-sync "
+        "tool, so its upstream-sync pull requests are opened by the same App, App id 4094707, "
+        "under the login version 10 named. "
+        "WHAT `CLEAN` MEANS THERE, which is what this version rests on, as version 7 rested on "
+        "the forks' gates. Two checks are required on main, both pinned to GitHub Actions: "
+        "`build and test` installs with `npm ci --ignore-scripts` and runs the configured build "
+        "and tests; `security review` is a fail-closed review that reads its gate from the BASE "
+        "branch. It reports deterministic findings for watched paths, binaries, submodule "
+        "pointers, npm lifecycle scripts, `bin` entries, `.npmrc` and non-registry dependencies, "
+        "lockfile sources, integrity and install scripts, and `npm audit --audit-level=high`, "
+        "and adds a model review of the full diff. Any unacknowledged finding, or a review that "
+        "could not run, fails the check. "
+        "rtk now carries the same two required checks, which makes the gate version 7 relied on "
+        "there stronger than the one it described. "
+        "NOTHING ELSE IS WIDENED. The authors, the docker exclusion, the freshness condition and "
+        "the ADR-0041 exemption are version 10's. Dependabot keeps the ecosystem bound in every "
+        "term, and `github-actions[bot]` is still not an author, because it is the identity of "
+        "ANY workflow in a repository. "
+        "The deploying population and every term keyed off it are version 10's objects, "
+        "unchanged. The two populations remain disjoint."
+    ),
+)
+
+
+V11: Final = DeployPolicy(
+    version=11,
+    decided="2026-10-19",
+    rationale=(
+        "Version 10's populations and terms, with one repository added to the inert lane: "
+        "alobarquest/rea. Nothing else is widened: the same two deploying repositories, the same "
+        "two change classes, the same risk, the same criteria, the same remedies, the same "
+        "rollout pins, the same conditions on the act, and the same inert authors and terms. "
+        "WHY IT EXISTS. rea is the operator's fork of morluto/rea, onboarded with the "
+        "orchestrator's fork-sync tool, and it now carries two required checks on main, "
+        "`build and test` and `security review`. Those are what a clean pull request there "
+        "means, and they are what version 10 said rea needed before it could be admitted."
+    ),
+    repositories=frozenset({"alobarquest/change-manager", "alobarquest/brain"}),
+    change_classes=frozenset({"dependency-update", "factory-delivery"}),
+    risks=frozenset({"caution"}),
+    acceptance_criteria={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_CRITERIA,
+        "alobarquest/brain": _V8_BRAIN_CRITERIA,
+    },
+    rollback_plans={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_ROLLBACK,
+        "alobarquest/brain": _V3_BRAIN_ROLLBACK,
+    },
+    # The SAME OBJECT versions 9 and 10 declared: this version makes no statement about the
+    # deploying lane.
+    landing=_V9_LANDING,
+    inert_landing=_V11_INERT,
+)
+
+
 # Every version ever, retained. A record stores the number that approved it, so an approval stays
 # re-evaluable after the policy has moved on.
 REGISTRY: Final[dict[int, DeployPolicy]] = {
-    policy.version: policy for policy in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11)
+    policy.version: policy for policy in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12)
 }
 
 

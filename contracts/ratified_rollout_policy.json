@@ -1,5 +1,5 @@
 {
-  "policy_version": 11,
+  "policy_version": 12,
   "repositories": {
     "alobarquest/brain": {
       "acceptance_criteria": [

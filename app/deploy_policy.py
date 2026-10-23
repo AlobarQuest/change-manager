@@ -23,7 +23,7 @@ in place would silently change what every past approval meant, which is the fail
 exists to prevent.
 
 WHERE A SUPERSEDED VERSION GOES. This module holds only the version in force and the terms it still
-carries; versions 1 to 10 live verbatim in `app.deploy_policy_history`, with `REGISTRY` and
+carries; versions 1 to 11 live verbatim in `app.deploy_policy_history`, with `REGISTRY` and
 `policy_for`. A bump moves the outgoing version there unedited, keeps here any term the new version
 still carries (named for the version that introduced it), and has the history module import that
 term rather than copy it. The import runs one way, history to this module, so nothing a live path
@@ -115,9 +115,9 @@ DEPENDABOT: Final = "dependabot[bot]"
 # Chosen over `github-actions[bot]` on 2026-09-05 precisely because this list permits by NAME:
 # `github-actions[bot]` is the identity of ANY workflow in a repository, so declaring it would
 # grant this lane to every workflow-authored pull request there rather than to the sync. As of
-# 2026-10-19 the App is installed on three forks -- rtk, claude-octopus and rea. Where it may land
-# is bounded by `InertLanding.repositories`, not by this name: version 10 did not declare rea
-# there, and version 11 does.
+# 2026-10-21 the App is installed on five forks -- rtk, claude-octopus, rea, n8n-as-code and
+# n8n-manager. Where it may land is bounded by `InertLanding.repositories`, not by this name:
+# version 10 did not declare rea there, version 11 does, and version 12 adds the n8n forks.
 FORK_SECURE_UPSTREAM_SYNC: Final = "fork-secure-upstream-sync[bot]"
 
 
@@ -308,7 +308,7 @@ class DeployPolicy:
 # Terms introduced by a superseded version and still in force under the current one.
 # ---------------------------------------------------------------------------
 #
-# Each is named for the version that introduced it. The versions themselves -- 1 to 10 -- are
+# Each is named for the version that introduced it. The versions themselves -- 1 to 11 -- are
 # retained verbatim in `app.deploy_policy_history`, which imports these rather than holding a
 # second transcription of one judgment.
 
@@ -481,12 +481,12 @@ _V9_LANDING: Final = LandingConditions(
 
 
 # ---------------------------------------------------------------------------
-# Version 11 -- the version in force.
+# Version 12 -- the version in force.
 # ---------------------------------------------------------------------------
 
-# VERSION 10'S INERT POPULATION AND TERMS, with one more fork. The same authors, the same
+# VERSION 11'S INERT POPULATION AND TERMS, with two more forks. The same authors, the same
 # exclusion, the same freshness condition and the same exempted author.
-_V11_INERT: Final = InertLanding(
+_V12_INERT: Final = InertLanding(
     repositories=frozenset(
         {
             "alobarquest/orchestrator",
@@ -501,6 +501,11 @@ _V11_INERT: Final = InertLanding(
             # Added by version 11, 2026-10-19. A fork of morluto/rea, a tool installed on the
             # operator's machine; it answers `landing: "inert"` in App Brain.
             "alobarquest/rea",
+            # Added by version 12, 2026-10-21. Forks of EtienneLescot/n8n-as-code and
+            # EtienneLescot/n8n-manager, tools installed on the operator's machine; both answer
+            # `landing: "inert"` in App Brain.
+            "alobarquest/n8n-as-code",
+            "alobarquest/n8n-manager",
         }
     ),
     permitted_authors=frozenset({DEPENDABOT, FORK_SECURE_UPSTREAM_SYNC}),
@@ -508,49 +513,47 @@ _V11_INERT: Final = InertLanding(
     require_head_current_with_base=True,
     non_ecosystem_authors=frozenset({FORK_SECURE_UPSTREAM_SYNC}),
     rationale=(
-        "The rule ADR-0038 declared, over the eight repositories version 10 named and one more "
-        "fork, with the same two authors. "
-        "WHAT IS ADDED. alobarquest/rea is the operator's fork of morluto/rea, a reverse-"
-        "engineering command-line tool and MCP server that the orchestrator's tool-installer "
-        "lane installs on the operator's machine. Nothing serves from it, so landing on its "
-        "default branch changes nothing already serving, which is this population's whole "
-        "criterion. Its default branch was rebuilt at upstream release `rea-agents-6.6.0` with "
-        "upstream's whole `.github/` removed, then onboarded with the orchestrator's fork-sync "
-        "tool, so its upstream-sync pull requests are opened by the same App, App id 4094707, "
-        "under the login version 10 named. "
-        "WHAT `CLEAN` MEANS THERE, which is what this version rests on, as version 7 rested on "
-        "the forks' gates. Two checks are required on main, both pinned to GitHub Actions: "
-        "`build and test` installs with `npm ci --ignore-scripts` and runs the configured build "
-        "and tests; `security review` is a fail-closed review that reads its gate from the BASE "
-        "branch. It reports deterministic findings for watched paths, binaries, submodule "
-        "pointers, npm lifecycle scripts, `bin` entries, `.npmrc` and non-registry dependencies, "
-        "lockfile sources, integrity and install scripts, and `npm audit --audit-level=high`, "
-        "and adds a model review of the full diff. Any unacknowledged finding, or a review that "
-        "could not run, fails the check. "
-        "rtk now carries the same two required checks, which makes the gate version 7 relied on "
-        "there stronger than the one it described. "
+        "The rule ADR-0038 declared, over the nine repositories version 11 named and two more "
+        "forks, with the same two authors. "
+        "WHAT IS ADDED. alobarquest/n8n-as-code is the operator's fork of "
+        "EtienneLescot/n8n-as-code, an n8n command-line tool and the Claude Code plugin that "
+        "drives it; alobarquest/n8n-manager is the operator's fork of EtienneLescot/n8n-manager, "
+        "the runtime n8n-as-code depends on and its plugin runs. Both are tools for the "
+        "operator's machine and nothing serves from either, so landing on their default "
+        "branches changes nothing already serving, which is this population's whole criterion. "
+        "Each default branch was rebuilt at an upstream release with upstream's whole `.github/` "
+        "removed, then onboarded with the orchestrator's fork-sync tool, so their upstream-sync "
+        "pull requests are opened by the same App, App id 4094707, under the login version 10 "
+        "named. "
+        "WHAT `CLEAN` MEANS THERE. Both carry the two required checks version 11 described for "
+        "rea, pinned to GitHub Actions: `build and test` and the fail-closed `security review` "
+        "read from the BASE branch. n8n-as-code's upstream commits no lockfile, so its sync "
+        "resolves one as of each release's commit date, outside upstream's tree with no "
+        "upstream configuration and no scripts or git fetches, and commits it to the sync pull "
+        "request; the review then audits and reviews that lockfile like any other "
+        "(orchestrator ADR-0056 amendment 2). "
         "NOTHING ELSE IS WIDENED. The authors, the docker exclusion, the freshness condition and "
-        "the ADR-0041 exemption are version 10's. Dependabot keeps the ecosystem bound in every "
+        "the ADR-0041 exemption are version 11's. Dependabot keeps the ecosystem bound in every "
         "term, and `github-actions[bot]` is still not an author, because it is the identity of "
         "ANY workflow in a repository. "
-        "The deploying population and every term keyed off it are version 10's objects, "
+        "The deploying population and every term keyed off it are version 11's objects, "
         "unchanged. The two populations remain disjoint."
     ),
 )
 
 
-V11: Final = DeployPolicy(
-    version=11,
-    decided="2026-10-19",
+V12: Final = DeployPolicy(
+    version=12,
+    decided="2026-10-21",
     rationale=(
-        "Version 10's populations and terms, with one repository added to the inert lane: "
-        "alobarquest/rea. Nothing else is widened: the same two deploying repositories, the same "
-        "two change classes, the same risk, the same criteria, the same remedies, the same "
-        "rollout pins, the same conditions on the act, and the same inert authors and terms. "
-        "WHY IT EXISTS. rea is the operator's fork of morluto/rea, onboarded with the "
-        "orchestrator's fork-sync tool, and it now carries two required checks on main, "
-        "`build and test` and `security review`. Those are what a clean pull request there "
-        "means, and they are what version 10 said rea needed before it could be admitted."
+        "Version 11's populations and terms, with two repositories added to the inert lane: "
+        "alobarquest/n8n-as-code and alobarquest/n8n-manager. Nothing else is widened: the same "
+        "two deploying repositories, the same two change classes, the same risk, the same "
+        "criteria, the same remedies, the same rollout pins, the same conditions on the act, and "
+        "the same inert authors and terms. "
+        "WHY IT EXISTS. Both are the operator's forks, onboarded with the orchestrator's "
+        "fork-sync tool on 2026-10-21, and each carries two required checks on main, "
+        "`build and test` and `security review`, which are what a clean pull request there means."
     ),
     repositories=frozenset({"alobarquest/change-manager", "alobarquest/brain"}),
     change_classes=frozenset({"dependency-update", "factory-delivery"}),
@@ -563,18 +566,18 @@ V11: Final = DeployPolicy(
         "alobarquest/change-manager": _V1_CHANGE_MANAGER_ROLLBACK,
         "alobarquest/brain": _V3_BRAIN_ROLLBACK,
     },
-    # The SAME OBJECT versions 9 and 10 declared: this version makes no statement about the
+    # The SAME OBJECT versions 9 to 11 declared: this version makes no statement about the
     # deploying lane.
     landing=_V9_LANDING,
-    inert_landing=_V11_INERT,
+    inert_landing=_V12_INERT,
 )
 
 
-CURRENT_VERSION: Final = 11
+CURRENT_VERSION: Final = 12
 
 
 def current() -> DeployPolicy:
-    return V11
+    return V12
 
 
 def objections(policy: DeployPolicy, item: object) -> tuple[str, ...]:
