@@ -40,6 +40,7 @@ from app.deploy_policy_history import OCTO_UPSTREAM_SYNC, REGISTRY, policy_for
 from app.models import ChangeEvent, ChangeItem
 from app.schemas import DeployChangeIn
 from app.transitions import TransitionError, decide
+from scripts.release_inert_repository import without_release_fields
 
 
 def conformant(**overrides) -> dict:
@@ -336,6 +337,10 @@ def test_an_unknown_version_is_a_finding_rather_than_a_default():
     # The two modules agree on which version is in force: `current()` answers from the live module
     # alone and `policy_for` from the history module's registry, and nothing else joins them.
     assert policy_for(CURRENT_VERSION) is current()
+    # And the version in force is the newest one retained, so a release that registers N+1 without
+    # making it current fails here rather than serving N while recording N+1.
+    assert CURRENT_VERSION == max(REGISTRY)
+    assert current() is REGISTRY[CURRENT_VERSION]
     assert policy_for(max(REGISTRY) + 1) is None
 
 
@@ -416,7 +421,6 @@ def test_the_current_version_pins_the_rollout_workflow_of_every_repository_it_na
     """A repository the policy admits with no pinned workflow is a repository whose criteria
     describe bytes nobody named, which is the hole this version exists to close."""
     policy = current()
-    assert CURRENT_VERSION == 12
     for repository in policy.repositories:
         pin = policy.landing.rollout_workflows.get(repository)
         assert pin is not None, f"{repository} is admitted with no rollout-workflow pin"
@@ -500,7 +504,7 @@ def test_the_two_version_fields_are_not_the_same_question(client, m2m, db):
 
     served = client.get("/api/items?source=deploy", headers=m2m).json()[0]
     assert served["policy_version"] == 1
-    assert served["landing_policy_version"] == CURRENT_VERSION == 12
+    assert served["landing_policy_version"] == CURRENT_VERSION
 
 
 def test_a_drift_record_carries_no_landing_conditions(client, m2m, db):
@@ -1563,7 +1567,21 @@ def test_the_policy_route_serves_the_inert_population(client, m2m):
     assert body["inert_landing"]["rationale"] == declared.rationale
     assert "ADR-0038" in body["inert_landing"]["rationale"]
     assert "alobarquest/factory-runner" in body["inert_landing"]["repositories"]
-    assert len(body["inert_landing"]["repositories"]) == 11
+    assert body["inert_landing"]["repositories"] == sorted(declared.repositories)
+    # The population only grows: every repository version 12 admitted is still admitted.
+    assert {
+        "alobarquest/orchestrator",
+        "alobarquest/intent-packages",
+        "alobarquest/security-standards",
+        "alobarquest/infraops-mcp-server",
+        "alobarquest/project-standards",
+        "alobarquest/factory-runner",
+        "alobarquest/rtk",
+        "alobarquest/claude-octopus",
+        "alobarquest/rea",
+        "alobarquest/n8n-as-code",
+        "alobarquest/n8n-manager",
+    } <= set(body["inert_landing"]["repositories"])
     assert "alobarquest/rtk" in body["inert_landing"]["repositories"]
     assert "alobarquest/claude-octopus" in body["inert_landing"]["repositories"]
     assert "alobarquest/rea" in body["inert_landing"]["repositories"]
@@ -1821,7 +1839,9 @@ def test_version_twelve_adds_only_the_n8n_forks_to_the_inert_population():
     """
     v11, v12 = policy_for(11), policy_for(12)
     assert v11 is not None and v12 is not None
-    assert v12 is current()
+    # NOT `v12 is current()`: which version is in force is asserted once, by
+    # `test_an_unknown_version_is_a_finding_rather_than_a_default`, so that a generated release
+    # (`scripts/release_inert_repository.py`) leaves every per-version claim true and untouched.
 
     # The deploying half: the SAME objects, because this version makes no statement about it.
     assert v12.repositories == v11.repositories
@@ -1845,3 +1865,66 @@ def test_version_twelve_adds_only_the_n8n_forks_to_the_inert_population():
     # The two populations stay disjoint.
     assert not twelve.repositories & v12.repositories
     assert "ADR-0038" in twelve.rationale
+
+
+def _without_release_fields(policy) -> dict:
+    # The generator's own definition of what an inert-only release may rewrite, so the script and
+    # this classification cannot drift apart.
+    return without_release_fields(policy_dict(policy))
+
+
+def _inert_only_releases() -> list[int]:
+    """Every version whose whole change from its predecessor is a larger inert population."""
+    found = []
+    for number in sorted(REGISTRY)[1:]:
+        before, after = REGISTRY[number - 1], REGISTRY[number]
+        if before.inert_landing is None or after.inert_landing is None:
+            continue
+        if _without_release_fields(before) != _without_release_fields(after):
+            continue
+        if after.inert_landing.repositories > before.inert_landing.repositories:
+            found.append(number)
+    return found
+
+
+def test_the_inert_only_releases_are_found():
+    """The classification below is not vacuous: versions 11 and 12 were hand-made inert-only
+    releases, and every release `scripts/release_inert_repository.py` generates is one too."""
+    found = _inert_only_releases()
+    assert {11, 12} <= set(found)
+    assert 7 not in found and 10 not in found  # those changed the authors as well
+
+
+@pytest.mark.parametrize("number", _inert_only_releases())
+def test_every_inert_only_release_adds_repositories_and_moves_nothing_else(number):
+    """What each such version claims, asserted term by term against the one it supersedes, so a
+    generated release needs no hand-written test of its own."""
+    before, after = REGISTRY[number - 1], REGISTRY[number]
+    assert after.version == number
+
+    # The deploying half: the SAME objects, because such a version makes no statement about it.
+    assert after.repositories == before.repositories
+    assert after.change_classes == before.change_classes
+    assert after.risks == before.risks
+    assert after.landing is before.landing
+    for repository in after.repositories:
+        assert after.acceptance_criteria[repository] is before.acceptance_criteria[repository]
+        assert after.rollback_plans[repository] is before.rollback_plans[repository]
+
+    old, new = before.inert_landing, after.inert_landing
+    assert old is not None and new is not None
+    added = new.repositories - old.repositories
+    assert added and old.repositories < new.repositories
+    assert new.permitted_authors == old.permitted_authors
+    assert new.non_ecosystem_authors == old.non_ecosystem_authors
+    assert new.excluded_ecosystems == old.excluded_ecosystems
+    assert new.require_head_current_with_base == old.require_head_current_with_base
+
+    # Each rationale names what it admits, so the grant is readable where it is served.
+    for repository in added:
+        assert repository in after.rationale
+        assert repository in new.rationale
+
+    # The two populations stay disjoint.
+    assert not new.repositories & after.repositories
+    assert "ADR-0038" in new.rationale

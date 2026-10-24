@@ -1,8 +1,8 @@
 """Every SUPERSEDED deploy-policy version, retained verbatim.
 
 `app.deploy_policy` holds the version in force and everything it still carries; this module holds
-versions 1 to 10, which no live path reads. They are kept because a record stores the number of
-the version that approved it, and re-evaluating that approval later means looking the old version
+every superseded version, which no live path reads. They are kept because a record stores the number
+of the version that approved it, and re-evaluating that approval later means looking the old version
 up and finding what it actually said -- the editing contract in `app.deploy_policy`'s header. A
 superseded version is never edited, here or anywhere.
 
@@ -1066,8 +1066,24 @@ V11: Final = DeployPolicy(
 
 # Every version ever, retained. A record stores the number that approved it, so an approval stays
 # re-evaluable after the policy has moved on.
+#
+# ONE VERSION PER LINE, so `scripts/release_inert_repository.py` adds a version by adding a line.
 REGISTRY: Final[dict[int, DeployPolicy]] = {
-    policy.version: policy for policy in (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12)
+    policy.version: policy
+    for policy in (
+        V1,
+        V2,
+        V3,
+        V4,
+        V5,
+        V6,
+        V7,
+        V8,
+        V9,
+        V10,
+        V11,
+        V12,
+    )
 }
 
 
