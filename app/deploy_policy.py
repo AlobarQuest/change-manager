@@ -23,11 +23,17 @@ in place would silently change what every past approval meant, which is the fail
 exists to prevent.
 
 WHERE A SUPERSEDED VERSION GOES. This module holds only the version in force and the terms it still
-carries; versions 1 to 11 live verbatim in `app.deploy_policy_history`, with `REGISTRY` and
+carries; every superseded version lives verbatim in `app.deploy_policy_history`, with `REGISTRY` and
 `policy_for`. A bump moves the outgoing version there unedited, keeps here any term the new version
 still carries (named for the version that introduced it), and has the history module import that
 term rather than copy it. The import runs one way, history to this module, so nothing a live path
 reads can depend on a superseded version.
+
+A version whose only change is one more repository in the inert population is GENERATED, not
+hand-written: `scripts/release_inert_repository.py` makes that bump and refuses it unless every
+earlier version projects byte-identical `policy_dict` output afterwards. Devon decided on
+2026-10-24 that each fork joining the orchestrator's fork-sync lane stays an explicit, versioned
+grant here, and that the onboarding tool generates the release rather than a person writing it.
 
 WHAT THIS CONSTRAINS, AND WHAT IT DELIBERATELY CANNOT. Every term below is a fact this service holds
 or a human pinned. **This service has no GitHub egress and cannot attest a caller**, so a term over
@@ -308,7 +314,7 @@ class DeployPolicy:
 # Terms introduced by a superseded version and still in force under the current one.
 # ---------------------------------------------------------------------------
 #
-# Each is named for the version that introduced it. The versions themselves -- 1 to 11 -- are
+# Each is named for the version that introduced it. The superseded versions themselves are
 # retained verbatim in `app.deploy_policy_history`, which imports these rather than holding a
 # second transcription of one judgment.
 
