@@ -191,15 +191,18 @@ def test_a_repository_in_the_deploying_population_is_refused(copy: Path):
     assert _bytes(copy) == before
 
 
-def test_a_usage_error_is_one_not_the_already_present_code(copy: Path):
+@pytest.mark.parametrize("args", [["--repository", PROBE], ["--help"]])
+def test_a_usage_error_or_help_is_one_not_a_success_code(copy: Path, args: list[str]):
+    before = _bytes(copy)
     done = subprocess.run(
-        [sys.executable, str(SCRIPT), "--repository", PROBE],
+        [sys.executable, str(SCRIPT), *args],
         cwd=copy,
         env=_env(copy.parent),
         capture_output=True,
         text=True,
     )
     assert done.returncode == 1
+    assert _bytes(copy) == before
 
 
 @pytest.mark.parametrize(
@@ -214,6 +217,8 @@ def test_a_usage_error_is_one_not_the_already_present_code(copy: Path):
         ("corrupt_contract", "(c) contracts/ratified_rollout_policy.json does not parse"),
         ("stale_contract", "(c) the contract names version {old}, not {new}"),
         ("stale_current_version", "(d) CURRENT_VERSION is {old} and current() is version {new}"),
+        ("rebind_criteria", "(b) version {new} changes more than the inert population"),
+        ("overlong_line", "(e) ruff check"),
         ("stale_current_function", "(d) CURRENT_VERSION is {new} and current() is version {old}"),
     ],
 )

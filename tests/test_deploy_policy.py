@@ -40,6 +40,7 @@ from app.deploy_policy_history import OCTO_UPSTREAM_SYNC, REGISTRY, policy_for
 from app.models import ChangeEvent, ChangeItem
 from app.schemas import DeployChangeIn
 from app.transitions import TransitionError, decide
+from scripts.release_inert_repository import without_release_fields
 
 
 def conformant(**overrides) -> dict:
@@ -1563,6 +1564,20 @@ def test_the_policy_route_serves_the_inert_population(client, m2m):
     assert "ADR-0038" in body["inert_landing"]["rationale"]
     assert "alobarquest/factory-runner" in body["inert_landing"]["repositories"]
     assert body["inert_landing"]["repositories"] == sorted(declared.repositories)
+    # The population only grows: every repository version 12 admitted is still admitted.
+    assert {
+        "alobarquest/orchestrator",
+        "alobarquest/intent-packages",
+        "alobarquest/security-standards",
+        "alobarquest/infraops-mcp-server",
+        "alobarquest/project-standards",
+        "alobarquest/factory-runner",
+        "alobarquest/rtk",
+        "alobarquest/claude-octopus",
+        "alobarquest/rea",
+        "alobarquest/n8n-as-code",
+        "alobarquest/n8n-manager",
+    } <= set(body["inert_landing"]["repositories"])
     assert "alobarquest/rtk" in body["inert_landing"]["repositories"]
     assert "alobarquest/claude-octopus" in body["inert_landing"]["repositories"]
     assert "alobarquest/rea" in body["inert_landing"]["repositories"]
@@ -1848,21 +1863,10 @@ def test_version_twelve_adds_only_the_n8n_forks_to_the_inert_population():
     assert "ADR-0038" in twelve.rationale
 
 
-# The fields an inert-only release rewrites. Everything else a version projects must be its
-# predecessor's, byte for byte.
-_RELEASE_PROSE = ("version", "decided", "rationale")
-_INERT_RELEASE_FIELDS = ("repositories", "rationale")
-
-
 def _without_release_fields(policy) -> dict:
-    served = policy_dict(policy)
-    for key in _RELEASE_PROSE:
-        served.pop(key)
-    inert = served.get("inert_landing")
-    if inert is not None:
-        for key in _INERT_RELEASE_FIELDS:
-            inert.pop(key)
-    return served
+    # The generator's own definition of what an inert-only release may rewrite, so the script and
+    # this classification cannot drift apart.
+    return without_release_fields(policy_dict(policy))
 
 
 def _inert_only_releases() -> list[int]:
