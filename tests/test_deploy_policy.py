@@ -337,6 +337,10 @@ def test_an_unknown_version_is_a_finding_rather_than_a_default():
     # The two modules agree on which version is in force: `current()` answers from the live module
     # alone and `policy_for` from the history module's registry, and nothing else joins them.
     assert policy_for(CURRENT_VERSION) is current()
+    # And the version in force is the newest one retained, so a release that registers N+1 without
+    # making it current fails here rather than serving N while recording N+1.
+    assert CURRENT_VERSION == max(REGISTRY)
+    assert current() is REGISTRY[CURRENT_VERSION]
     assert policy_for(max(REGISTRY) + 1) is None
 
 

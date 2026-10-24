@@ -18,14 +18,29 @@ No test is written: `tests/test_deploy_policy.py` asserts every inert-only relea
 
 THE SELF-CHECK IS THE SAFETY PROPERTY, not the text editing. After writing, a fresh interpreter
 imports the edited modules, and the release is refused -- every touched file restored to its
-original bytes -- unless (a) every version 1..N projects byte-identical `policy_dict` output,
-(b) version N+1 projects version N's output except its prose and an inert population of exactly
-version N's plus the repository, (c) the regenerated contract parses and names version N+1, and
-(d) `CURRENT_VERSION` and `current()` are version N+1.
+original bytes -- unless all five hold:
+(a) every version 1..N projects byte-identical output (`policy_dict` plus its ratified criteria
+    and rollback plans, which `policy_dict` does not serve);
+(b) version N+1 projects version N's output except its prose (`decided`, the two rationales) and
+    an inert population of exactly version N's plus the repository;
+(c) the regenerated contract is byte-identical to `render_ratified_rollout_policy(current())` as
+    the fresh interpreter renders it, and names version N+1;
+(d) `CURRENT_VERSION` and `current()` are version N+1, and `REGISTRY` gained exactly it;
+(e) both edited modules pass the repository's `ruff check` and `ruff format --check`.
 
-Exit codes: 0 released, and stdout is exactly `<N+1> <repository>`; 2 the repository is already in
-the current version's inert population, and nothing is touched; 1 anything else, with every file
-restored. Diagnostics go to stderr.
+OUTPUT. Exit 0 means the command did what it was asked, and stdout is then exactly one line of
+JSON, one of:
+    {"status": "released", "version": <N+1>, "repository": "<owner/name>"}
+    {"status": "already_present", "version": <N>, "repository": "<owner/name>"}
+"already_present" touches nothing. ANY nonzero exit is a failure -- 1 is this script's own
+refusal, with every file restored; anything else is the interpreter or `uv` failing -- and
+nothing but that JSON line is ever written to stdout. Diagnostics go to stderr.
+
+KNOWN LIMITS, deliberately not changed. The transforms anchor on the exact text of the version
+block as the hand-made releases wrote it; when the layout changes they refuse (exit 1, nothing
+touched) rather than guess, and the generator is updated with the layout. The inert population
+stays Python in the policy module rather than moving to a data file, which would be a larger
+redesign of how versions are retained.
 
 THIS SCRIPT NEVER IMPORTS `app`. The virtualenv installs this repository editable, so an in-process
 import resolves wherever that install points rather than to the tree beside this file. Every read
@@ -36,6 +51,7 @@ resolved anywhere else.
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import os
@@ -101,10 +117,10 @@ _SOURCE_FAULTS = {
         "# " + "x" * 120 + "\nCURRENT_VERSION: Final",
     ),
 }
-_CONTRACT_FAULTS = ("corrupt_contract", "stale_contract")
+_CONTRACT_FAULTS = ("corrupt_contract", "stale_contract", "reformat_contract")
 FAULTS = (*_SOURCE_FAULTS, *_CONTRACT_FAULTS)
 
-EXIT_RELEASED, EXIT_REFUSED, EXIT_ALREADY_PRESENT = 0, 1, 2
+EXIT_DONE, EXIT_REFUSED = 0, 1
 
 # Fields an inert-only release rewrites; every other projected field must be version N's.
 RELEASE_PROSE = ("version", "decided", "rationale")
@@ -125,6 +141,10 @@ print(json.dumps({
     "current_version": live.CURRENT_VERSION,
     "current_is": live.current().version,
     "registry": sorted(history.REGISTRY),
+    "contract": live.render_ratified_rollout_policy(live.current()),
+    "same_landing_since": min(
+        n for n, p in history.REGISTRY.items() if p.landing is live.current().landing
+    ),
     # `policy_dict` serves no criteria or remedies, so they are projected beside it: a release that
     # rebound either would otherwise pass every comparison below.
     "policies": {
@@ -148,10 +168,14 @@ class Snapshot:
     current_version: int
     current_is: int
     registry: list[int]
+    contract: str
+    same_landing_since: int
     policies: dict[int, dict]
 
 
-_EMPTY_PYCACHE = tempfile.TemporaryDirectory(prefix="release-inert-pycache-")
+@functools.cache
+def _empty_pycache() -> tempfile.TemporaryDirectory[str]:
+    return tempfile.TemporaryDirectory(prefix="release-inert-pycache-")
 
 
 def _isolated_env() -> dict[str, str]:
@@ -159,25 +183,31 @@ def _isolated_env() -> dict[str, str]:
     # compiled from bytes that an edit within the same second replaced.
     env = dict(os.environ)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    env["PYTHONPYCACHEPREFIX"] = _EMPTY_PYCACHE.name
+    env["PYTHONPYCACHEPREFIX"] = _empty_pycache().name
     return env
 
 
-def _run(args: list[str]) -> str:
+def _run(name: str, args: list[str]) -> str:
     done = subprocess.run(
         [sys.executable, *args], cwd=ROOT, env=_isolated_env(), capture_output=True, text=True
     )
     if done.returncode != 0:
-        raise Refusal(f"{' '.join(args[:2])} failed ({done.returncode}): {done.stderr.strip()}")
+        # The cause first -- the last line a failing interpreter writes is the exception -- and
+        # trimmed, so a caller reading a short window sees it.
+        lines = done.stderr.strip().splitlines() or ["no diagnostics"]
+        cause = lines[-1][:240]
+        raise Refusal(f"{cause} [{name} exited {done.returncode}]")
     return done.stdout
 
 
 def probe() -> Snapshot:
-    raw = json.loads(_run(["-c", _PROBE, str(ROOT)]))
+    raw = json.loads(_run("policy probe", ["-c", _PROBE, str(ROOT)]))
     return Snapshot(
         current_version=raw["current_version"],
         current_is=raw["current_is"],
         registry=raw["registry"],
+        contract=raw["contract"],
+        same_landing_since=raw["same_landing_since"],
         policies={int(n): served for n, served in raw["policies"].items()},
     )
 
@@ -232,16 +262,20 @@ def _new_version_adds_only(
     return failures
 
 
-def _contract_is_new_version(before: Snapshot) -> list[str]:
-    """(c) The regenerated contract parses and names version N+1."""
+def _contract_is_new_version(before: Snapshot, after: Snapshot) -> list[str]:
+    """(c) The regenerated contract is exactly what the new version renders, and names N+1."""
     n = before.current_version
     try:
-        contract_version = json.loads(CONTRACT.read_text(encoding="utf-8")).get("policy_version")
+        committed = CONTRACT.read_text(encoding="utf-8")
+        contract_version = json.loads(committed).get("policy_version")
     except (OSError, ValueError, AttributeError) as error:
         return [f"(c) {CONTRACT.relative_to(ROOT)} does not parse: {error}"]
+    failures = []
     if contract_version != n + 1:
-        return [f"(c) the contract names version {contract_version}, not {n + 1}"]
-    return []
+        failures.append(f"(c) the contract names version {contract_version}, not {n + 1}")
+    if committed != after.contract:
+        failures.append("(c) the contract is not what current() renders")
+    return failures
 
 
 def _new_version_in_force(before: Snapshot, after: Snapshot) -> list[str]:
@@ -278,7 +312,7 @@ def self_check(before: Snapshot, after: Snapshot, repository: str, decided: str)
     return [
         *_earlier_versions_unchanged(before, after),
         *_new_version_adds_only(before, after, repository, decided),
-        *_contract_is_new_version(before),
+        *_contract_is_new_version(before, after),
         *_new_version_in_force(before, after),
         *_modules_pass_the_linters(),
     ]
@@ -364,7 +398,13 @@ _RATIONALE_BLOCK = r"    rationale=\(\n(?:        .*\n)+?    \),\n"
 
 
 def _release_policy_module(
-    source: str, n: int, repository: str, reason: str, decided: str, inert_count: int
+    source: str,
+    n: int,
+    repository: str,
+    reason: str,
+    decided: str,
+    inert_count: int,
+    same_landing_since: int,
 ) -> tuple[str, str]:
     """(the new deploy_policy.py, version N's verbatim block for the history module)."""
     header = _one(
@@ -430,11 +470,19 @@ def _release_policy_module(
         policy,
         count=1,
     )
-    policy = re.sub(
-        r"# The SAME OBJECT versions? (\d+)(?: (?:to|and) \d+)? declared",
-        lambda found: f"# The SAME OBJECT versions {found[1]} to {n} declared",
-        policy,
-        count=1,
+    landing = _one(
+        r"(?:    #.*\n)*    landing=(_V\d+_LANDING),\n", policy, "deploying-lane landing term"
+    )
+    declared = f"versions {same_landing_since} to {n}" if same_landing_since < n else f"version {n}"
+    policy = policy.replace(
+        landing[0],
+        _comment_lines(
+            f"The SAME OBJECT {declared} declared: this version makes no statement about the "
+            "deploying lane.",
+            4,
+        )
+        + f"    landing={landing[1]},\n",
+        1,
     )
     policy = _replace_once(
         policy,
@@ -543,17 +591,21 @@ def _write_release(
             reason,
             decided,
             len(before.policies[n]["inert_landing"]["repositories"]),
+            before.same_landing_since,
         )
         history = _release_history_module(originals[HISTORY].decode("utf-8"), n, moved)
         if fault is not None:
             policy, history = _inject(fault, n, repository, decided, policy, history)
         POLICY.write_text(policy, encoding="utf-8")
         HISTORY.write_text(history, encoding="utf-8")
-        sys.stderr.write(_run(["-m", "scripts.write_ratified_rollout_policy"]))
+        sys.stderr.write(_run("contract writer", ["-m", "scripts.write_ratified_rollout_policy"]))
         if fault == "corrupt_contract":
             CONTRACT.write_text("{\n", encoding="utf-8")
         elif fault == "stale_contract":
             CONTRACT.write_bytes(originals[CONTRACT])
+        elif fault == "reformat_contract":
+            regenerated = json.loads(CONTRACT.read_text(encoding="utf-8"))
+            CONTRACT.write_text(json.dumps(regenerated, indent=4), encoding="utf-8")
         failures = self_check(before, probe(), repository, decided)
         if failures:
             raise Refusal("self-check failed:\n  " + "\n  ".join(failures))
@@ -563,27 +615,33 @@ def _write_release(
         raise
 
 
+def _report(status: str, version: int, repository: str) -> None:
+    """The one line this command writes to stdout."""
+    print(json.dumps({"status": status, "version": version, "repository": repository}))
+
+
 def release(repository: str, reason: str, decided: str, fault: str | None) -> int:
     if fault is not None and fault not in FAULTS:
         raise Refusal(f"{FAULT_ENV}={fault!r} is not one of {', '.join(FAULTS)}")
     before = probe()
     if _already_present(before, repository):
-        print(
-            f"{repository} is already in version {before.current_version}'s inert population",
-            file=sys.stderr,
-        )
-        return EXIT_ALREADY_PRESENT
+        _report("already_present", before.current_version, repository)
+        return EXIT_DONE
     _write_release(before, repository, reason, decided, fault)
-    print(f"{before.current_version + 1} {repository}")
-    return EXIT_RELEASED
+    _report("released", before.current_version + 1, repository)
+    return EXIT_DONE
 
 
 class _Parser(argparse.ArgumentParser):
-    # argparse exits 2 on a usage error, which is this command's "already present". Refuse instead.
+    # argparse exits 2 on a usage error; this script's own refusals are 1, so refuse instead.
     def error(self, message: str) -> NoReturn:
         raise Refusal(message)
 
-    # And `--help` exits 0, which is this command's "released".
+    # Help and usage go to stderr: stdout carries only the one JSON line.
+    def print_help(self, file=None) -> None:
+        super().print_help(sys.stderr)
+
+    # And `--help` exits 0, which means "done" here; no release was made, so refuse.
     def exit(self, status: int = 0, message: str | None = None) -> NoReturn:
         raise Refusal(message or "no release made")
 
