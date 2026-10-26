@@ -128,6 +128,13 @@ rotated_by_sds = true
   healthchecks_check = "sds-work-carrier"
   note = "launchd com.devon.work-carrier 07:05 (fetched on every run); Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-work-carrier"
 
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "orchestrator"
+  ref = "scripts/run-landing-ledger.sh"
+  healthchecks_check = "sds-landing-ledger"
+  note = "launchd com.devon.landing-ledger 07:30 (fetched on every run, to read the landing policy's inert population when deriving the ledger's repositories); Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-landing-ledger"
+
 [[credential]]
 id = "change-manager-propose-bearer"
 class = "change-manager-m2m-bearer"
