@@ -47,7 +47,8 @@ rotate_requested = "2026-10-26"
   kind = "runtime-fetch"
   repo = "infraops-mcp-server"
   ref = "scripts/drift-audit.sh"
-  note = "launchd com.devon.infra-drift 03:00; Keychain Claude/BWS_ACCESS_TOKEN_INFRA_DRIFT (broad account); its change-manager calls (sync, security-drift run) only log a WARN on failure and the run still pings success, so no read shows it switched: a person attests it (orchestrator adapter change-manager-attested)"
+  healthchecks_check = "Infra Standards Drif"
+  note = "launchd com.devon.infra-drift 03:00; Keychain Claude/BWS_ACCESS_TOKEN_INFRA_DRIFT (broad account); pings /start before the fetch, and a refused or empty bearer (401/403 at /api/landing-policy) pings /fail and exits 1 (infraops-mcp-server drift-audit-bearer-probe); its other change-manager failures stay non-fatal; Healthchecks check Infra Standards Drif"
 
   [[credential.consumer]]
   kind = "runtime-fetch"
