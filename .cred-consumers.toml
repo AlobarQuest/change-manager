@@ -24,6 +24,10 @@ provider_identity = "FULL scope (M2M_TOKEN)"
 bws_uuid = "af0e4192-edc6-46ae-9e4f-b469011dbb8d"
 created = "2026-06-14"
 disposition = "reissue"
+# Handed to the rotation executor 2026-10-26 (intent-packages rotation-change-manager-full-bearer
+# rev 1, approved by Devon 2026-10-23).
+rotated_by_sds = true
+rotate_requested = "2026-10-26"
 
   [[credential.consumer]]
   kind = "bws-secret"
