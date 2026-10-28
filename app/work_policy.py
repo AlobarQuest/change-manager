@@ -9,6 +9,9 @@ that does not stays `pending` and a person decides it exactly as before.
 It approves and nothing else. It never revokes, never touches a record a person has decided,
 and never runs on a record that is not `pending`.
 
+Reactivating a `wontfix` record returns it to `pending`, which this policy then acts on, so a
+conforming replay approves it. That is a choice: `defer` is how a person holds a record.
+
 The inert population is read from the current deploy policy (`inert_landing.repositories`),
 never copied: a repository that starts to deploy leaves that list, and its bumps stop being
 approved here in the same release.

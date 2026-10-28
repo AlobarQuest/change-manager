@@ -168,3 +168,23 @@ def test_the_inert_list_is_read_from_the_current_deploy_policy() -> None:
 
 def test_a_malformed_target_repository_is_refused(client: TestClient, m2m: dict[str, str]) -> None:
     assert _propose(client, m2m, target_repository="not a repo").status_code == 422
+
+
+def test_reactivating_a_wontfix_record_lets_a_conforming_replay_approve_it(
+    client: TestClient, m2m: dict[str, str]
+) -> None:
+    item_id = _propose(client, m2m, change_class="app-change").json()["id"]
+    client.post(f"/api/items/{item_id}/wontfix", json={"actor": "devon"}, headers=m2m)
+    reactivated = client.post(
+        f"/api/items/{item_id}/reactivate", json={"actor": "devon"}, headers=m2m
+    )
+    assert reactivated.json()["status"] == "pending"
+    # The stored class stands, so the replay cannot conform; policy leaves it for a person.
+    assert _propose(client, m2m).json()["status"] == "pending"
+
+    other = _propose(client, m2m, package_id="other-pkg").json()["id"]
+    client.post(f"/api/items/{other}/wontfix", json={"actor": "devon"}, headers=m2m)
+    client.post(f"/api/items/{other}/reactivate", json={"actor": "devon"}, headers=m2m)
+    replay = _propose(client, m2m, package_id="other-pkg")
+    assert replay.json()["status"] == "approved"
+    assert replay.json()["decided_by"] == WORK_POLICY_ACTOR

@@ -7,11 +7,14 @@ at "we approved the work" and the orchestrator started at a human pasting JSON i
 
 **What this module deliberately does NOT do, and the two are different absences.**
 
-It does not APPROVE. A work record is created `pending` and a human approves it, through the
-ordinary decision routes, exactly as ADR-0026 decision 5 says. That is why `work` is in
-`PROPOSED_SOURCES` and NOT in `POLICY_APPROVED_SOURCES` -- the deploy pipeline's policy is
-about deploying merges and has nothing to say about a package revision, and being governed by
-a policy that cannot see you is indistinguishable from having no approver at all.
+It does not approve by SOURCE. A work record is created `pending` and a human approves it,
+through the ordinary decision routes (ADR-0026 decision 5), with one exception that is a
+property of the RECORD: a standing dependency update for an inert repository conforms to
+`work_policy` and is approved by it, as `work-policy`, in the proposal transaction. `work` is in
+`PROPOSED_SOURCES` and NOT in `POLICY_APPROVED_SOURCES`, because that set refuses a human
+approval to every caller and would leave every other work record (a rotation, an app change)
+unapprovable by anybody. The policy only approves: it never revokes, and a person can still
+approve, defer or decline any record.
 
 It does not EXECUTE, and nothing here can. `work` is in `PROPOSED_SOURCES`, so the record is
 withheld from the unfiltered `GET /api/items?status=approved` the 04:00 change-window executor
@@ -123,9 +126,11 @@ def propose_work_change(db: Session, body: WorkChangeIn) -> tuple[ChangeItem, bo
     response can retry. Raises `WorkChangeConflict` when one exists asserting different facts,
     and `WorkChangeIdentityHeld` when the key belongs to another pipeline.
 
-    A repeat proposal is a genuine no-op here, unlike the deploy ingress: there is no policy to
-    re-run and no derived field to refresh, because everything this record carries is asserted
-    by the caller and none of it moves on its own.
+    A repeat proposal changes nothing that was asserted: there is no derived field to refresh
+    and a stored fact stands. The one thing a replay can do is meet the work policy: a record
+    that is still `pending` has `target_repository`/`change_class` filled in from the replay
+    where they are null, and is approved if it then conforms. A record in any other status is
+    returned untouched.
     """
     proposed = {field: getattr(body, field) for field in _ASSERTED_FIELDS}
     identity = work_identity(body.package_source_repository, body.package_id, body.package_revision)
@@ -184,7 +189,7 @@ def propose_work_change(db: Session, body: WorkChangeIn) -> tuple[ChangeItem, bo
 
 
 def _approve_by_policy(db: Session, item: ChangeItem, body: WorkChangeIn) -> None:
-    """Replay path: let a still-pending record meet the policy, then commit if it moved.
+    """Replay path: let a still-pending record meet the policy; commit only if it moved.
 
     A record proposed before `target_repository`/`change_class` existed stores null for both, and
     its producer replays it with them. Only an absent fact is filled in from the replay; a stored
@@ -197,7 +202,8 @@ def _approve_by_policy(db: Session, item: ChangeItem, body: WorkChangeIn) -> Non
     if item.change_class is None:
         item.change_class = body.change_class
     _apply_policy(db, item)
-    db.commit()
+    if db.dirty or db.new:
+        db.commit()
 
 
 def _apply_policy(db: Session, item: ChangeItem) -> None:
