@@ -5,11 +5,14 @@ app-change records unapprovable by anyone. The policy is per RECORD, so every te
 conforming record with a non-conforming one that differs in exactly one fact.
 """
 
+from dataclasses import replace
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import work_policy
 from app.deploy_policy import current, inert_landing_dict
 from app.models import ChangeEvent, ChangeItem
 from app.work_policy import WORK_POLICY_ACTOR, objections
@@ -189,31 +192,48 @@ def test_reactivating_a_wontfix_record_lets_a_conforming_replay_approve_it(
     assert replay.json()["decided_by"] == WORK_POLICY_ACTOR
 
 
-@pytest.mark.parametrize("repository", ["AlobarQuest/brain", "AlobarQuest/change-manager"])
+@pytest.mark.parametrize(
+    "repository",
+    [
+        pytest.param("AlobarQuest/brain", id="brain"),
+        pytest.param("AlobarQuest/change-manager", id="change-manager"),
+        pytest.param("alobarquest/BRAIN", id="brain-case-variant"),
+    ],
+)
 def test_deploying_repository_record_is_approved(
     client: TestClient, m2m: dict[str, str], repository: str
 ) -> None:
-    response = _propose(
-        client, m2m, package_id=f"bump-{repository[-5:]}", target_repository=repository
-    )
+    response = _propose(client, m2m, package_id="bump-deploying", target_repository=repository)
     assert response.status_code == 201, response.text
     assert response.json()["status"] == "approved"
     assert response.json()["decided_by"] == WORK_POLICY_ACTOR
 
 
-def test_record_outside_both_populations_stays_pending() -> None:
-    item = ChangeItem(
+def _item(repository: str) -> ChangeItem:
+    return ChangeItem(
         package_source_repository="AlobarQuest/intent-packages",
         risk="caution",
-        target_repository="AlobarQuest/not-in-policy",
+        target_repository=repository,
         change_class="dependency-update",
     )
-    assert objections(item) == ["target_repository_not_in_policy"]
 
 
-def test_landing_populations_are_disjoint() -> None:
+@pytest.mark.parametrize("repository", ["AlobarQuest/not-in-policy", "AlobarQuest/brain-x"])
+def test_record_outside_both_populations_stays_pending(repository: str) -> None:
+    assert objections(_item(repository)) == ["target_repository_not_in_policy"]
+
+
+def test_a_policy_without_an_inert_block_approves_only_deploying_repositories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(work_policy, "current", lambda: replace(current(), inert_landing=None))
+    assert objections(_item("AlobarQuest/brain")) == []
+    assert objections(_item(_INERT)) == ["target_repository_not_in_policy"]
+
+
+def test_current_policy_landing_populations_are_disjoint() -> None:
+    """Checks the CURRENT policy only: the module keeps no older versions, and each version
+    that becomes current is checked here when it ships."""
     policy = current()
-    assert policy.repositories
     inert = policy.inert_landing.repositories if policy.inert_landing else frozenset()
-    assert inert
     assert policy.repositories & inert == frozenset()
