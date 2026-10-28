@@ -37,11 +37,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.deploy_policy import current as current_policy
 from app.events import record_event
 from app.identity import work_identity
 from app.models import ChangeItem
 from app.schemas import WorkChangeIn
 from app.sources import WORK_LANE, WORK_SOURCE
+from app.work_policy import WORK_POLICY_ACTOR, objections
 
 # The rule that produced the item, in the same slot drift uses for the rule it fired.
 WORK_RULE_KEY = "work-proposal"
@@ -130,6 +132,7 @@ def propose_work_change(db: Session, body: WorkChangeIn) -> tuple[ChangeItem, bo
 
     existing = _existing(db, identity, proposed)
     if existing is not None:
+        _approve_by_policy(db, existing, body)
         return existing, False
 
     now = datetime.now(UTC)
@@ -148,6 +151,9 @@ def propose_work_change(db: Session, body: WorkChangeIn) -> tuple[ChangeItem, bo
         # also the construction payload -- see that tuple's comment. It is set once, here,
         # and no path updates it afterwards.
         originating_observation_id=body.originating_observation_id,
+        # Explicit for the same reason: read by the work policy, never asserted on replay.
+        target_repository=body.target_repository,
+        change_class=body.change_class,
         **proposed,
     )
     db.add(item)
@@ -161,6 +167,7 @@ def propose_work_change(db: Session, body: WorkChangeIn) -> tuple[ChangeItem, bo
             to_status="pending",
             detail=f"work proposed: {identity}",
         )
+        _apply_policy(db, item)
         db.commit()
     except IntegrityError:
         # A concurrent proposal for the same package revision won the unique index between our
@@ -171,8 +178,49 @@ def propose_work_change(db: Session, body: WorkChangeIn) -> tuple[ChangeItem, bo
         winner = _existing(db, identity, proposed)
         if winner is None:  # pragma: no cover - the row cannot vanish again
             raise
+        _approve_by_policy(db, winner, body)
         return winner, False
     return item, True
+
+
+def _approve_by_policy(db: Session, item: ChangeItem, body: WorkChangeIn) -> None:
+    """Replay path: let a still-pending record meet the policy, then commit if it moved.
+
+    A record proposed before `target_repository`/`change_class` existed stores null for both, and
+    its producer replays it with them. Only an absent fact is filled in from the replay; a stored
+    one stands, so a replay can never move a record onto a different repository.
+    """
+    if item.status != "pending":
+        return
+    if item.target_repository is None:
+        item.target_repository = body.target_repository
+    if item.change_class is None:
+        item.change_class = body.change_class
+    _apply_policy(db, item)
+    db.commit()
+
+
+def _apply_policy(db: Session, item: ChangeItem) -> None:
+    """Approve a pending record that conforms to the work policy. Never revokes."""
+    if item.status != "pending" or objections(item):
+        return
+    policy = current_policy()
+    item.status = "approved"
+    item.decided_by = WORK_POLICY_ACTOR
+    item.decided_at = datetime.now(UTC)
+    item.policy_version = policy.version
+    record_event(
+        db,
+        item,
+        actor=WORK_POLICY_ACTOR,
+        event_type="approved",
+        from_status="pending",
+        to_status="approved",
+        detail=(
+            f"standing dependency update for an inert repository, per deploy policy "
+            f"v{policy.version}; approved by that policy rather than by any caller"
+        ),
+    )
 
 
 def _existing(db: Session, identity: str, proposed: dict) -> ChangeItem | None:
