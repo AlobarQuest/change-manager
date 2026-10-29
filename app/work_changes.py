@@ -9,11 +9,12 @@ at "we approved the work" and the orchestrator started at a human pasting JSON i
 
 It does not approve by SOURCE. A work record is created `pending` and a human approves it,
 through the ordinary decision routes (ADR-0026 decision 5), with one exception that is a
-property of the RECORD: a standing dependency update for a repository in deploy policy conforms to
-`work_policy` and is approved by it, as `work-policy`, in the proposal transaction. `work` is in
-`PROPOSED_SOURCES` and NOT in `POLICY_APPROVED_SOURCES`, because that set refuses a human
-approval to every caller and would leave every other work record (a rotation, an app change)
-unapprovable by anybody. The policy only approves: it never revokes, and a person can still
+property of the RECORD: a standing dependency update for a repository in deploy policy, or a
+standing credential rotation, conforms to `work_policy` and is approved by it, as `work-policy`,
+in the proposal transaction. `work` is in `PROPOSED_SOURCES` and NOT in
+`POLICY_APPROVED_SOURCES`, because that set refuses a human approval to every caller and would
+leave every other work record (an app change, a rotation that doesn't conform) unapprovable by
+anybody. The policy only approves: it never revokes, and a person can still
 approve, defer or decline any record.
 
 It does not EXECUTE, and nothing here can. `work` is in `PROPOSED_SOURCES`, so the record is
@@ -46,7 +47,7 @@ from app.identity import work_identity
 from app.models import ChangeItem
 from app.schemas import WorkChangeIn
 from app.sources import WORK_LANE, WORK_SOURCE
-from app.work_policy import WORK_POLICY_ACTOR, objections
+from app.work_policy import WORK_POLICY_ACTOR, is_rotation, objections
 
 # The rule that produced the item, in the same slot drift uses for the rule it fired.
 WORK_RULE_KEY = "work-proposal"
@@ -210,11 +211,18 @@ def _apply_policy(db: Session, item: ChangeItem) -> None:
     """Approve a pending record that conforms to the work policy. Never revokes."""
     if item.status != "pending" or objections(item):
         return
-    policy = current_policy()
+    if is_rotation(item):
+        # The deploy policy permitted nothing here, so no version of it is recorded.
+        basis = "standing credential rotation whose package revision a named person approved"
+    else:
+        item.policy_version = current_policy().version
+        basis = (
+            f"standing dependency update for a repository in deploy policy, per deploy policy "
+            f"v{item.policy_version}"
+        )
     item.status = "approved"
     item.decided_by = WORK_POLICY_ACTOR
     item.decided_at = datetime.now(UTC)
-    item.policy_version = policy.version
     record_event(
         db,
         item,
@@ -222,10 +230,7 @@ def _apply_policy(db: Session, item: ChangeItem) -> None:
         event_type="approved",
         from_status="pending",
         to_status="approved",
-        detail=(
-            f"standing dependency update for a repository in deploy policy, per deploy policy "
-            f"v{policy.version}; approved by that policy rather than by any caller"
-        ),
+        detail=f"{basis}; approved by policy rather than by any caller",
     )
 
 
