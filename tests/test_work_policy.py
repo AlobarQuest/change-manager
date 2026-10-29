@@ -138,10 +138,72 @@ def test_a_person_may_still_approve_a_nonconforming_work_record(
     assert response.json()["decided_by"] == "devon"
 
 
-def test_rotation_records_are_unaffected(client: TestClient, m2m: dict[str, str]) -> None:
-    """A record not about a dependency update never conforms, whatever repository it names."""
-    response = _propose(client, m2m, package_id="rotation-x", change_class="credential-rotation")
+_ROTATION = {
+    "package_id": "rotation-openrouter-generic",
+    "package_source_repository": "AlobarQuest/intent-packages",
+    "risk": "caution",
+    "target_repository": None,
+    "change_class": None,
+}
+
+
+def test_a_standing_rotation_record_is_approved_by_policy(
+    db: Session, client: TestClient, m2m: dict[str, str]
+) -> None:
+    """ADR-0055 amendment 16: the package revision a named person approved is the one click."""
+    response = _propose(client, m2m, **_ROTATION)
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["status"] == "approved"
+    assert body["decided_by"] == WORK_POLICY_ACTOR
+    event = db.scalars(
+        select(ChangeEvent).where(
+            ChangeEvent.item_id == body["id"], ChangeEvent.event_type == "approved"
+        )
+    ).one()
+    assert "standing credential rotation" in (event.detail or "")
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"change_class": "credential-rotation"},
+        {"change_class": "dependency-update"},
+        {"target_repository": _INERT},
+        {"risk": "high"},
+        {"package_source_repository": "AlobarQuest/somewhere-else"},
+        {"package_id": "rotation-"},
+        {"package_id": "rotation-Openrouter"},
+        {"package_id": "x-rotation-openrouter"},
+        {"package_id": "rotation_openrouter"},
+    ],
+    ids=[
+        "class",
+        "bump-class",
+        "repo",
+        "risk",
+        "source",
+        "empty-credential",
+        "upper-case",
+        "prefixed",
+        "underscore",
+    ],
+)
+def test_a_nonconforming_rotation_record_stays_pending(
+    client: TestClient, m2m: dict[str, str], overrides: dict
+) -> None:
+    response = _propose(client, m2m, **{**_ROTATION, **overrides})
+    assert response.status_code == 201, response.text
     assert response.json()["status"] == "pending"
+
+
+def test_a_rotation_shaped_dependency_update_is_judged_as_a_rotation() -> None:
+    """A `rotation-` package naming a repository in policy does not pass as a bump."""
+    item = ChangeItem(**{**_CONFORMING, "package_id": "rotation-openrouter-generic"})
+    assert objections(item) == [
+        "rotation_names_a_change_class",
+        "rotation_names_a_target_repository",
+    ]
 
 
 def test_a_work_record_renders_without_a_pull_request(
