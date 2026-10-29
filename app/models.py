@@ -60,7 +60,9 @@ class ChangeItem(Base):
     pr_url: Mapped[str | None] = mapped_column(String)
     # ADR-0019: a deploying-merge change — an SDS-initiated merge into a repository
     # where landing on `main` IS deploying production. Set together by the proposal
-    # route and by nothing else; null on every derived item.
+    # route and by nothing else; null on every derived item. A `work` record carries
+    # `target_repository` and `change_class` WITHOUT a pull request number (what the work lands
+    # on, read by `work_policy`); only a record with all three names a merge.
     target_repository: Mapped[str | None] = mapped_column(String)
     pull_request_number: Mapped[int | None] = mapped_column(Integer)
     change_class: Mapped[str | None] = mapped_column(String)
@@ -78,6 +80,9 @@ class ChangeItem(Base):
     # and does it actually permit it?" has no answer once the policy has moved. It is what
     # `landing_ledger`'s rule pin already does for a landing, in the same estate, for the same
     # reason.
+    #
+    # A `work` record approved by `work_policy` carries the deploy policy's version too: its inert
+    # repository list is read from that policy.
     policy_version: Mapped[int | None] = mapped_column(Integer)
     # ADR-0026: WHICH APPROVED INTENT PACKAGE EFFECTS THIS WORK. A work proposal names a
     # package the orchestrator can already intake; it does not describe the work in prose and
@@ -89,7 +94,8 @@ class ChangeItem(Base):
     # about `acceptance_criteria` and `rollback_plan`: the proposal route refuses a record that
     # lacks them, and a refusal needs a column to be absent from. The infrastructure-shaped
     # columns above do not fit -- `resource_uuid`/`resource_name` identify a Coolify resource,
-    # and `target_repository` is ADR-0019's deploying-merge subject, which this is not.
+    # and `target_repository` there is ADR-0019's deploying-merge subject; a work record's is the
+    # repository the package changes, optional, and paired with no pull request.
     # Null on every other source.
     package_id: Mapped[str | None] = mapped_column(String)
     package_revision: Mapped[int | None] = mapped_column(Integer)

@@ -239,6 +239,11 @@ class WorkChangeIn(BaseModel):
     # existed carries null, and its producer replays it on every pass. Null means "nothing
     # recorded a cause" and never "no cause exists".
     originating_observation_id: str | None = None
+    # What the work lands on and what kind of change it is. Optional, and read by the work
+    # policy (`app/work_policy.py`): a record naming an inert repository and the
+    # `dependency-update` class is approved by policy. Neither is asserted on replay.
+    target_repository: str | None = None  # "owner/repo"
+    change_class: str | None = None
 
     @field_validator("package_source_repository")
     @classmethod
@@ -257,6 +262,21 @@ class WorkChangeIn(BaseModel):
     @classmethod
     def _canonical_observation_id(cls, v: str | None) -> str | None:
         return _observation_id(v)
+
+    @field_validator("target_repository")
+    @classmethod
+    def _optional_owner_slash_repo(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        text = _required_text(v, "target_repository")
+        if not _REPOSITORY.fullmatch(text):
+            raise ValueError("target_repository must be a GitHub 'owner/repo' name")
+        return text
+
+    @field_validator("change_class")
+    @classmethod
+    def _optional_class(cls, v: str | None) -> str | None:
+        return None if v is None else _required_text(v, "change_class")
 
 
 class DeployRetirementIn(BaseModel):
