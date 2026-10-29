@@ -15,7 +15,8 @@ conforming replay approves it. That is a choice: `defer` is how a person holds a
 The population is read from the current deploy policy, never copied: the deploying
 repositories (`repositories`) and the inert ones (`inert_landing.repositories`). A repository
 that leaves both stops being approved here in the same release. The two lists are disjoint, which
-`test_landing_populations_are_disjoint` holds.
+`test_current_policy_landing_populations_are_disjoint` holds
+(for the current version).
 """
 
 from typing import Final
