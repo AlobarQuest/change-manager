@@ -47,7 +47,7 @@ from app.identity import work_identity
 from app.models import ChangeItem
 from app.schemas import WorkChangeIn
 from app.sources import WORK_LANE, WORK_SOURCE
-from app.work_policy import WORK_POLICY_ACTOR, basis, objections
+from app.work_policy import WORK_POLICY_ACTOR, is_rotation, objections
 
 # The rule that produced the item, in the same slot drift uses for the rule it fired.
 WORK_RULE_KEY = "work-proposal"
@@ -211,11 +211,18 @@ def _apply_policy(db: Session, item: ChangeItem) -> None:
     """Approve a pending record that conforms to the work policy. Never revokes."""
     if item.status != "pending" or objections(item):
         return
-    policy = current_policy()
+    if is_rotation(item):
+        # The deploy policy permitted nothing here, so no version of it is recorded.
+        basis = "standing credential rotation whose package revision a named person approved"
+    else:
+        item.policy_version = current_policy().version
+        basis = (
+            f"standing dependency update for a repository in deploy policy, per deploy policy "
+            f"v{item.policy_version}"
+        )
     item.status = "approved"
     item.decided_by = WORK_POLICY_ACTOR
     item.decided_at = datetime.now(UTC)
-    item.policy_version = policy.version
     record_event(
         db,
         item,
@@ -223,10 +230,7 @@ def _apply_policy(db: Session, item: ChangeItem) -> None:
         event_type="approved",
         from_status="pending",
         to_status="approved",
-        detail=(
-            f"{basis(item)}, per deploy policy v{policy.version}; approved by that policy rather "
-            f"than by any caller"
-        ),
+        detail=f"{basis}; approved by policy rather than by any caller",
     )
 
 

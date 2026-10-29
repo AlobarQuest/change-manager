@@ -1,4 +1,4 @@
-"""Policy approval of standing dependency-update `work` records (bridge layer, Part 3).
+"""Policy approval of standing `work` records: dependency updates and credential rotations.
 
 `work` stays outside `POLICY_APPROVED_SOURCES`: a source-wide policy would make rotation and
 app-change records unapprovable by anyone. The policy is per RECORD, so every test pairs a
@@ -138,37 +138,47 @@ def test_a_person_may_still_approve_a_nonconforming_work_record(
     assert response.json()["decided_by"] == "devon"
 
 
+# What the orchestrator's rotation proposer sends: no `target_repository` key at all.
 _ROTATION = {
     "package_id": "rotation-openrouter-generic",
     "package_source_repository": "AlobarQuest/intent-packages",
     "risk": "caution",
-    "target_repository": None,
-    "change_class": None,
+    "change_class": "credential-rotation",
 }
+
+
+def _propose_rotation(client: TestClient, m2m: dict[str, str], **overrides):
+    body = {**_payload(), **_ROTATION, **overrides}
+    body.pop("target_repository", None)
+    if "target_repository" in overrides:
+        body["target_repository"] = overrides["target_repository"]
+    return client.post("/api/work-changes", json=body, headers=m2m)
 
 
 def test_a_standing_rotation_record_is_approved_by_policy(
     db: Session, client: TestClient, m2m: dict[str, str]
 ) -> None:
     """ADR-0055 amendment 16: the package revision a named person approved is the one click."""
-    response = _propose(client, m2m, **_ROTATION)
+    response = _propose_rotation(client, m2m)
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["status"] == "approved"
     assert body["decided_by"] == WORK_POLICY_ACTOR
+    # The deploy policy permitted nothing about a rotation, so no version of it is recorded.
+    assert body["policy_version"] is None
     event = db.scalars(
         select(ChangeEvent).where(
             ChangeEvent.item_id == body["id"], ChangeEvent.event_type == "approved"
         )
     ).one()
     assert "standing credential rotation" in (event.detail or "")
+    assert "deploy policy" not in (event.detail or "")
 
 
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"change_class": "credential-rotation"},
-        {"change_class": "dependency-update"},
+        {"change_class": None},
         {"target_repository": _INERT},
         {"risk": "high"},
         {"package_source_repository": "AlobarQuest/somewhere-else"},
@@ -176,10 +186,10 @@ def test_a_standing_rotation_record_is_approved_by_policy(
         {"package_id": "rotation-Openrouter"},
         {"package_id": "x-rotation-openrouter"},
         {"package_id": "rotation_openrouter"},
+        {"package_id": "orchestrator-bump-ruff"},
     ],
     ids=[
-        "class",
-        "bump-class",
+        "no-class",
         "repo",
         "risk",
         "source",
@@ -187,23 +197,36 @@ def test_a_standing_rotation_record_is_approved_by_policy(
         "upper-case",
         "prefixed",
         "underscore",
+        "not-rotation",
     ],
 )
 def test_a_nonconforming_rotation_record_stays_pending(
     client: TestClient, m2m: dict[str, str], overrides: dict
 ) -> None:
-    response = _propose(client, m2m, **{**_ROTATION, **overrides})
+    response = _propose_rotation(client, m2m, **overrides)
     assert response.status_code == 201, response.text
     assert response.json()["status"] == "pending"
 
 
-def test_a_rotation_shaped_dependency_update_is_judged_as_a_rotation() -> None:
-    """A `rotation-` package naming a repository in policy does not pass as a bump."""
-    item = ChangeItem(**{**_CONFORMING, "package_id": "rotation-openrouter-generic"})
-    assert objections(item) == [
-        "rotation_names_a_change_class",
-        "rotation_names_a_target_repository",
-    ]
+def test_a_rotation_named_bump_is_judged_as_a_bump() -> None:
+    """A dependency-update package whose id happens to start `rotation-` gets the population
+    check: the class decides which rules apply, never the package's name."""
+    item = ChangeItem(
+        **{**_CONFORMING, "package_id": "rotation-x-bump", "target_repository": "AlobarQuest/x"}
+    )
+    assert objections(item) == ["target_repository_not_in_policy"]
+
+
+def test_a_pending_rotation_record_replayed_with_its_class_is_approved(
+    client: TestClient, m2m: dict[str, str]
+) -> None:
+    """A record proposed before the class was sent fills it on replay and is then approved."""
+    first = _propose_rotation(client, m2m, change_class=None).json()
+    assert first["status"] == "pending"
+    replay = _propose_rotation(client, m2m)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["id"] == first["id"]
+    assert replay.json()["status"] == "approved"
 
 
 def test_a_work_record_renders_without_a_pull_request(
