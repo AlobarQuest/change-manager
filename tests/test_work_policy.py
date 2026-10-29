@@ -5,11 +5,14 @@ app-change records unapprovable by anyone. The policy is per RECORD, so every te
 conforming record with a non-conforming one that differs in exactly one fact.
 """
 
+from dataclasses import replace
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import work_policy
 from app.deploy_policy import current, inert_landing_dict
 from app.models import ChangeEvent, ChangeItem
 from app.work_policy import WORK_POLICY_ACTOR, objections
@@ -64,12 +67,11 @@ def test_a_conforming_work_record_is_approved_by_policy(
         {"change_class": "app-change"},
         {"change_class": None},
         {"target_repository": None},
-        {"target_repository": "AlobarQuest/brain"},
-        {"target_repository": "AlobarQuest/change-manager"},
+        {"target_repository": "AlobarQuest/not-in-policy"},
         {"risk": "high"},
         {"package_source_repository": "AlobarQuest/somewhere-else"},
     ],
-    ids=["class", "no-class", "no-repo", "deploying-brain", "deploying-cm", "risk", "source"],
+    ids=["class", "no-class", "no-repo", "unlisted-repo", "risk", "source"],
 )
 def test_a_nonconforming_work_record_stays_pending(
     client: TestClient, m2m: dict[str, str], overrides: dict
@@ -106,12 +108,12 @@ def test_a_replay_with_the_fields_approves_a_pending_record(
 
 
 def test_the_new_fields_are_not_asserted(client: TestClient, m2m: dict[str, str]) -> None:
-    first = _propose(client, m2m, target_repository="AlobarQuest/brain").json()
+    first = _propose(client, m2m, target_repository="AlobarQuest/not-in-policy").json()
     replay = _propose(client, m2m, target_repository=_INERT, change_class="app-change")
     assert replay.status_code == 200, replay.text
     assert replay.json()["id"] == first["id"]
     # The first cause stands: policy is not re-run against fields the replay changed.
-    assert replay.json()["target_repository"] == "AlobarQuest/brain"
+    assert replay.json()["target_repository"] == "AlobarQuest/not-in-policy"
     assert replay.json()["status"] == "pending"
 
 
@@ -188,3 +190,50 @@ def test_reactivating_a_wontfix_record_lets_a_conforming_replay_approve_it(
     replay = _propose(client, m2m, package_id="other-pkg")
     assert replay.json()["status"] == "approved"
     assert replay.json()["decided_by"] == WORK_POLICY_ACTOR
+
+
+@pytest.mark.parametrize(
+    "repository",
+    [
+        pytest.param("AlobarQuest/brain", id="brain"),
+        pytest.param("AlobarQuest/change-manager", id="change-manager"),
+        pytest.param("alobarquest/BRAIN", id="brain-case-variant"),
+    ],
+)
+def test_deploying_repository_record_is_approved(
+    client: TestClient, m2m: dict[str, str], repository: str
+) -> None:
+    response = _propose(client, m2m, package_id="bump-deploying", target_repository=repository)
+    assert response.status_code == 201, response.text
+    assert response.json()["status"] == "approved"
+    assert response.json()["decided_by"] == WORK_POLICY_ACTOR
+
+
+def _item(repository: str) -> ChangeItem:
+    return ChangeItem(
+        package_source_repository="AlobarQuest/intent-packages",
+        risk="caution",
+        target_repository=repository,
+        change_class="dependency-update",
+    )
+
+
+@pytest.mark.parametrize("repository", ["AlobarQuest/not-in-policy", "AlobarQuest/brain-x"])
+def test_record_outside_both_populations_stays_pending(repository: str) -> None:
+    assert objections(_item(repository)) == ["target_repository_not_in_policy"]
+
+
+def test_a_policy_without_an_inert_block_approves_only_deploying_repositories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(work_policy, "current", lambda: replace(current(), inert_landing=None))
+    assert objections(_item("AlobarQuest/brain")) == []
+    assert objections(_item(_INERT)) == ["target_repository_not_in_policy"]
+
+
+def test_current_policy_landing_populations_are_disjoint() -> None:
+    """Checks the CURRENT policy only: the module keeps no older versions, and each version
+    that becomes current is checked here when it ships."""
+    policy = current()
+    inert = policy.inert_landing.repositories if policy.inert_landing else frozenset()
+    assert policy.repositories & inert == frozenset()

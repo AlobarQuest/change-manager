@@ -12,9 +12,11 @@ and never runs on a record that is not `pending`.
 Reactivating a `wontfix` record returns it to `pending`, which this policy then acts on, so a
 conforming replay approves it. That is a choice: `defer` is how a person holds a record.
 
-The inert population is read from the current deploy policy (`inert_landing.repositories`),
-never copied: a repository that starts to deploy leaves that list, and its bumps stop being
-approved here in the same release.
+The population is read from the current deploy policy, never copied: the deploying
+repositories (`repositories`) and the inert ones (`inert_landing.repositories`). A repository
+that leaves both stops being approved here in the same release. The two lists are disjoint, which
+`test_current_policy_landing_populations_are_disjoint` holds
+(for the current version).
 """
 
 from typing import Final
@@ -30,17 +32,18 @@ POLICY_RISK: Final = "caution"
 
 
 def objections(item: ChangeItem) -> list[str]:
-    """Why this record is not a standing dependency-update package for an inert repository.
+    """Why this record is not a standing dependency-update package for a repository in policy.
 
     Empty means it conforms. The names are stable strings a test can pin.
     """
     found: list[str] = []
     if item.change_class != DEPENDENCY_UPDATE:
         found.append("change_class_not_dependency_update")
-    inert = current().inert_landing
+    policy = current()
+    inert = policy.inert_landing.repositories if policy.inert_landing else frozenset()
     repository = (item.target_repository or "").lower()
-    if inert is None or repository not in inert.repositories:
-        found.append("target_repository_not_inert")
+    if repository not in inert | policy.repositories:
+        found.append("target_repository_not_in_policy")
     if (item.package_source_repository or "").lower() != PACKAGES_REPOSITORY.lower():
         found.append("package_source_not_intent_packages")
     if item.risk != POLICY_RISK:
