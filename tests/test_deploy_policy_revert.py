@@ -93,7 +93,9 @@ def test_version_fourteen_admits_the_revert_class_and_changes_nothing_else():
     assert not v14.inert_landing.repositories & v14.repositories
 
 
-def test_the_revert_lands_without_pace_or_window_and_only_from_the_dispatch_app():
+def test_the_declared_revert_landing_waives_pace_and_window_and_names_the_dispatch_app():
+    """What version 14 DECLARES on the act. This service enforces none of it: the landing party,
+    which can read who opened a pull request, does."""
     revert = current().landing.revert_landing
     assert revert is not None
     assert revert.change_class == DEPENDENCY_REVERT
