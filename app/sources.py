@@ -21,26 +21,27 @@ guarded here against this one definition:
    An approved proposed change is not remediable by that agent, so this module's members
    are withheld from an unfiltered listing and refused at `claim`.
 
-**WHY THERE ARE NOW TWO SETS, AND WHY ONE WOULD HAVE BEEN A DEFECT.** Until `work` there
-was one member, so three genuinely different properties coincided and one frozenset
-expressed all of them:
+**WHY THERE ARE TWO SETS.** Three genuinely different properties once coincided over the one
+proposed source, and one frozenset cannot express all of them:
 
-  (a) asserted once, never re-derived — withheld from the unfiltered listing, from
+  (a) asserted once, never re-derived -- withheld from the unfiltered listing, from
       `reconcile`'s resolve-absent sweep and from the handoff watchdog;
-  (b) no authorized executor — `claim`, `outcome` and `handoff` refused;
-  (c) approved by conformance to the pinned deploy policy and by no caller —
+  (b) no authorized executor -- `claim`, `outcome` and `handoff` refused;
+  (c) approved by conformance to the pinned deploy policy and by no caller --
       `transitions.decide` and `guards.require_policy_approver` refuse an approval, and
       the deploy policy's objections and landing conditions are projected onto the record.
 
-A work proposal needs (a) and (b) and must NOT have (c): ADR-0026 decision 5 is that the
-human decides in change-manager, and (c) refuses a human approval to every caller
-including the full bearer. Putting `work` in one combined set would have produced a record
-that can be proposed, is correctly withheld from the 04:00 agent, and **can never be
-approved by anybody** — the carry's own precondition, unreachable. `models.names_a_merge`
-already anticipated this in prose: a property that "happens to coincide over today's one
-proposed source" is not the property to key on. So (a) and (b) stay on
-`PROPOSED_SOURCES`, which every new proposed source joins, and (c) moves to
-`POLICY_APPROVED_SOURCES`, which is about the deploy policy specifically.
+A work proposal has (a) and (b) and must NOT have (c): (c) refuses a human approval to every
+caller including the full bearer, so a source-wide policy would make every work record (a
+rotation, an app change) unapprovable by anybody. (a) and (b) are `PROPOSED_SOURCES`, which every
+new proposed source joins; (c) is `POLICY_APPROVED_SOURCES`, about the deploy policy specifically.
+
+**WORK RECORDS ARE APPROVED BY A PERSON, EXCEPT ONE POLICY, WHICH IS PER RECORD.** A record that is
+a standing dependency update for a repository in deploy policy, or a standing credential rotation
+(`app/work_policy.py`), is approved inside its proposal transaction as `work-policy`. That is a
+property of the record, never of the source: a person can still approve, defer or decline it, and
+every other work record waits for one. `models.names_a_merge` anticipated this in prose: a property
+that "happens to coincide over today's one proposed source" is not the property to key on.
 """
 
 DEPLOY_SOURCE = "deploy"

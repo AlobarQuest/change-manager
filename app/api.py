@@ -161,10 +161,12 @@ def propose_work(body: WorkChangeIn, response: Response, db: Session = Depends(g
     201 when the record is created, 200 when an identical proposal already existed, 409 when a
     different one did or when the identity is held by another pipeline.
 
-    The record is created `pending`. A human approves it here -- this route cannot, and neither
-    can any other caller: approval is the ordinary decision, and it is the whole reason `work`
-    is outside `POLICY_APPROVED_SOURCES`. Nothing in the change-window lanes will ever execute
-    it; the carry (orchestrator `work-carrier`) reads the approved record and prepares an
+    The record is created `pending` and a human approves it, with one exception: a standing
+    dependency update for a repository in deploy policy, or a standing credential rotation
+    (`app/work_policy.py`), is approved by policy inside this transaction, on creation and on a
+    replay of a still-pending record. `work` stays outside `POLICY_APPROVED_SOURCES`, so a record
+    that does not conform is decided by a person. Nothing in the change-window lanes will ever
+    execute it; the carry (orchestrator `work-carrier`) reads the approved record and prepares an
     intake for it.
     """
     try:

@@ -7,11 +7,15 @@ at "we approved the work" and the orchestrator started at a human pasting JSON i
 
 **What this module deliberately does NOT do, and the two are different absences.**
 
-It does not APPROVE. A work record is created `pending` and a human approves it, through the
-ordinary decision routes, exactly as ADR-0026 decision 5 says. That is why `work` is in
-`PROPOSED_SOURCES` and NOT in `POLICY_APPROVED_SOURCES` -- the deploy pipeline's policy is
-about deploying merges and has nothing to say about a package revision, and being governed by
-a policy that cannot see you is indistinguishable from having no approver at all.
+It does not approve by SOURCE. A work record is created `pending` and a human approves it,
+through the ordinary decision routes (ADR-0026 decision 5), with one exception that is a
+property of the RECORD: a standing dependency update for a repository in deploy policy, or a
+standing credential rotation, conforms to `work_policy` and is approved by it, as `work-policy`,
+in the proposal transaction. `work` is in `PROPOSED_SOURCES` and NOT in
+`POLICY_APPROVED_SOURCES`, because that set refuses a human approval to every caller and would
+leave every other work record (an app change, a rotation that doesn't conform) unapprovable by
+anybody. The policy only approves: it never revokes, and a person can still
+approve, defer or decline any record.
 
 It does not EXECUTE, and nothing here can. `work` is in `PROPOSED_SOURCES`, so the record is
 withheld from the unfiltered `GET /api/items?status=approved` the 04:00 change-window executor
@@ -37,11 +41,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.deploy_policy import current as current_policy
 from app.events import record_event
 from app.identity import work_identity
 from app.models import ChangeItem
 from app.schemas import WorkChangeIn
 from app.sources import WORK_LANE, WORK_SOURCE
+from app.work_policy import WORK_POLICY_ACTOR, is_rotation, objections
 
 # The rule that produced the item, in the same slot drift uses for the rule it fired.
 WORK_RULE_KEY = "work-proposal"
@@ -121,15 +127,18 @@ def propose_work_change(db: Session, body: WorkChangeIn) -> tuple[ChangeItem, bo
     response can retry. Raises `WorkChangeConflict` when one exists asserting different facts,
     and `WorkChangeIdentityHeld` when the key belongs to another pipeline.
 
-    A repeat proposal is a genuine no-op here, unlike the deploy ingress: there is no policy to
-    re-run and no derived field to refresh, because everything this record carries is asserted
-    by the caller and none of it moves on its own.
+    A repeat proposal changes nothing that was asserted: there is no derived field to refresh
+    and a stored fact stands. The one thing a replay can do is meet the work policy: a record
+    that is still `pending` has `target_repository`/`change_class` filled in from the replay
+    where they are null, and is approved if it then conforms. A record in any other status is
+    returned untouched.
     """
     proposed = {field: getattr(body, field) for field in _ASSERTED_FIELDS}
     identity = work_identity(body.package_source_repository, body.package_id, body.package_revision)
 
     existing = _existing(db, identity, proposed)
     if existing is not None:
+        _approve_by_policy(db, existing, body)
         return existing, False
 
     now = datetime.now(UTC)
@@ -148,6 +157,9 @@ def propose_work_change(db: Session, body: WorkChangeIn) -> tuple[ChangeItem, bo
         # also the construction payload -- see that tuple's comment. It is set once, here,
         # and no path updates it afterwards.
         originating_observation_id=body.originating_observation_id,
+        # Explicit for the same reason: read by the work policy, never asserted on replay.
+        target_repository=body.target_repository,
+        change_class=body.change_class,
         **proposed,
     )
     db.add(item)
@@ -161,6 +173,7 @@ def propose_work_change(db: Session, body: WorkChangeIn) -> tuple[ChangeItem, bo
             to_status="pending",
             detail=f"work proposed: {identity}",
         )
+        _apply_policy(db, item)
         db.commit()
     except IntegrityError:
         # A concurrent proposal for the same package revision won the unique index between our
@@ -171,8 +184,54 @@ def propose_work_change(db: Session, body: WorkChangeIn) -> tuple[ChangeItem, bo
         winner = _existing(db, identity, proposed)
         if winner is None:  # pragma: no cover - the row cannot vanish again
             raise
+        _approve_by_policy(db, winner, body)
         return winner, False
     return item, True
+
+
+def _approve_by_policy(db: Session, item: ChangeItem, body: WorkChangeIn) -> None:
+    """Replay path: let a still-pending record meet the policy; commit only if it moved.
+
+    A record proposed before `target_repository`/`change_class` existed stores null for both, and
+    its producer replays it with them. Only an absent fact is filled in from the replay; a stored
+    one stands, so a replay can never move a record onto a different repository.
+    """
+    if item.status != "pending":
+        return
+    if item.target_repository is None:
+        item.target_repository = body.target_repository
+    if item.change_class is None:
+        item.change_class = body.change_class
+    _apply_policy(db, item)
+    if db.dirty or db.new:
+        db.commit()
+
+
+def _apply_policy(db: Session, item: ChangeItem) -> None:
+    """Approve a pending record that conforms to the work policy. Never revokes."""
+    if item.status != "pending" or objections(item):
+        return
+    if is_rotation(item):
+        # The deploy policy permitted nothing here, so no version of it is recorded.
+        basis = "standing credential rotation whose package revision a named person approved"
+    else:
+        item.policy_version = current_policy().version
+        basis = (
+            f"standing dependency update for a repository in deploy policy, per deploy policy "
+            f"v{item.policy_version}"
+        )
+    item.status = "approved"
+    item.decided_by = WORK_POLICY_ACTOR
+    item.decided_at = datetime.now(UTC)
+    record_event(
+        db,
+        item,
+        actor=WORK_POLICY_ACTOR,
+        event_type="approved",
+        from_status="pending",
+        to_status="approved",
+        detail=f"{basis}; approved by policy rather than by any caller",
+    )
 
 
 def _existing(db: Session, identity: str, proposed: dict) -> ChangeItem | None:
