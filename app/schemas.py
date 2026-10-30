@@ -240,8 +240,9 @@ class WorkChangeIn(BaseModel):
     # recorded a cause" and never "no cause exists".
     originating_observation_id: str | None = None
     # What the work lands on and what kind of change it is. Optional, and read by the work
-    # policy (`app/work_policy.py`): a record naming an inert repository and the
-    # `dependency-update` class is approved by policy. Neither is asserted on replay.
+    # policy (`app/work_policy.py`): a record naming a repository in deploy policy and the
+    # `dependency-update` class, or a rotation package with the `credential-rotation` class and no
+    # repository, is approved by policy. Neither is asserted on replay.
     target_repository: str | None = None  # "owner/repo"
     change_class: str | None = None
 

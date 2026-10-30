@@ -36,12 +36,12 @@ caller including the full bearer, so a source-wide policy would make every work 
 rotation, an app change) unapprovable by anybody. (a) and (b) are `PROPOSED_SOURCES`, which every
 new proposed source joins; (c) is `POLICY_APPROVED_SOURCES`, about the deploy policy specifically.
 
-**WORK RECORDS ARE APPROVED BY A PERSON, EXCEPT ONE POLICY, WHICH IS PER RECORD.** A record
-that is a standing dependency update for an inert repository (`app/work_policy.py`) is approved
-inside its proposal transaction as `work-policy`. That is a property of the record, never of the
-source: a person can still approve, defer or decline it, and every other work record waits for
-one. `models.names_a_merge` anticipated this in prose: a property that "happens to coincide over
-today's one proposed source" is not the property to key on.
+**WORK RECORDS ARE APPROVED BY A PERSON, EXCEPT ONE POLICY, WHICH IS PER RECORD.** A record that is
+a standing dependency update for a repository in deploy policy, or a standing credential rotation
+(`app/work_policy.py`), is approved inside its proposal transaction as `work-policy`. That is a
+property of the record, never of the source: a person can still approve, defer or decline it, and
+every other work record waits for one. `models.names_a_merge` anticipated this in prose: a property
+that "happens to coincide over today's one proposed source" is not the property to key on.
 """
 
 DEPLOY_SOURCE = "deploy"
