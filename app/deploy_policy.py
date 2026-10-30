@@ -126,6 +126,17 @@ DEPENDABOT: Final = "dependabot[bot]"
 # version 10 did not declare rea there, version 11 does, and version 12 adds the n8n forks.
 FORK_SECURE_UPSTREAM_SYNC: Final = "fork-secure-upstream-sync[bot]"
 
+# The App the orchestrator acts through on GitHub (`alobar-sds-dispatch`), in the REST spelling of
+# `pull_request.user.login`, which is what the landing party compares against. Version 14 names it
+# as the only author of a `dependency-revert` pull request: the SDS opens its own reverts through
+# it. IT SITS ON THE PERMITTING SIDE, so a wrong spelling under-permits and a revert waits for a
+# person -- the safe direction.
+DISPATCH_APP: Final = "alobar-sds-dispatch[bot]"
+
+# The change class of the SDS's own revert of a bump it judged bad, as `change_proposer` writes it.
+# Version 14 admits it, with a remedy of its own and conditions on the act of its own.
+DEPENDENCY_REVERT: Final = "dependency-revert"
+
 
 @dataclass(frozen=True)
 class WorkflowPin:
@@ -148,6 +159,36 @@ class WorkflowPin:
 
     path: str
     blob_sha: str
+
+
+@dataclass(frozen=True)
+class RevertLanding:
+    """The conditions on landing the SDS's own revert of a bump it judged bad. Version 14.
+
+    A revert is not a bump, and the bump's conditions are the wrong ones for it. Production has
+    already been pointed back at the previous image when the revert opens, so the default branch no
+    longer describes what serves until the revert lands: waiting for the next change window, or
+    behind the day's one landing, is the cost the pace and the window exist to impose on a CHANGE,
+    and here it is imposed on the remedy. So both are waived, and the waiver is DECLARED as a field
+    rather than implied by an absent one -- a landing party that cannot read this block applies
+    them, which is the safe direction.
+
+    The author is the condition that takes their place. The SDS opens its reverts through its
+    Dispatch App, and nobody else is meant to: a `dependency-revert` pull request any other account
+    opened is not the SDS's revert, whatever its record says. This service cannot read who opened a
+    pull request, so like every term here it is declared and the landing party enforces it.
+
+    WHAT IS NOT A FIELD: whether the revert is the exact inverse of the bump, and whether the SDS
+    recorded opening it. Both are facts the orchestrator holds and asks itself at the landing; a
+    statement of them here would be a second copy nobody can check.
+    """
+
+    change_class: str
+    # Spelled as `pull_request.user.login` spells it. It permits rather than excludes, so a wrong
+    # value under-permits and a revert waits for a person.
+    permitted_authors: frozenset[str]
+    exempt_from_pace: bool
+    exempt_from_change_window: bool
 
 
 @dataclass(frozen=True)
@@ -188,6 +229,11 @@ class LandingConditions:
     # GitHub -- it is the second segment of the branch the update bot opens -- and the landing
     # party is the one that can read it.
     excluded_ecosystems: frozenset[str] | None = None
+    # Version 14. The conditions on landing a `dependency-revert` record's pull request, or None for
+    # every version that admits no such class. Defaulted, like the two fields above, so every
+    # superseded version stays readable exactly as it was decided, and omitted from the served
+    # conditions when None, so each serves the bytes it always served.
+    revert_landing: RevertLanding | None = None
 
 
 @dataclass(frozen=True)
@@ -308,6 +354,11 @@ class DeployPolicy:
     # fail-closed reading `rollout_workflows` asks for and the opposite of the one an empty
     # `excluded_ecosystems` would get.
     inert_landing: InertLanding | None = None
+    # Version 14. A REMEDY PER CLASS, for a class whose remedy is not its repository's. Keyed by
+    # class, then by repository; a record of a class named here is held to this remedy and not to
+    # `rollback_plans`. Defaulted empty so every superseded version stays readable as decided: none
+    # of them gave any class a remedy of its own.
+    class_rollback_plans: Mapping[str, Mapping[str, Rollback]] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -486,13 +537,69 @@ _V9_LANDING: Final = LandingConditions(
 )
 
 
+# Introduced by version 14.
+#
+# THE REVERT'S REMEDY, per repository. Undoing a revert is restoring the bump: production is put
+# back on the reverted merge's image, and the revert is itself reverted so the default branch and
+# production agree again. Shaped like each repository's own remedy, and for the same reasons --
+# brain's four applications are four re-points, and the target is the image because brain has no
+# lockfile.
+#
+# BYTE-COMPARED, like the remedies above: the producer's copy is
+# `change_proposer.criteria._REVERT_ROLLBACKS`, and the orchestrator's ratification check holds
+# the two equal through `contracts/ratified_rollout_policy.json`.
+_V14_REVERT_ROLLBACKS: Final = {
+    "alobarquest/change-manager": Rollback(
+        steps=(
+            "re-point the moving image tag at the reverted merge's per-SHA tag and redeploy",
+            "revert this revert on main, restoring the bump, so main and production agree again",
+        ),
+        target="image",
+    ),
+    "alobarquest/brain": Rollback(
+        steps=(
+            "re-point each affected app's moving image tag at the reverted merge's per-SHA tag "
+            "and redeploy",
+            "revert this revert on main, restoring the bump, so main and production agree again",
+        ),
+        target="image",
+    ),
+}
+
+# VERSION 9'S TERMS ON THE BUMP, unchanged, and a block of conditions on the SDS's revert.
+_V14_LANDING: Final = LandingConditions(
+    update_types=_V9_LANDING.update_types,
+    require_head_current_with_base=_V9_LANDING.require_head_current_with_base,
+    excluded_ecosystems=_V9_LANDING.excluded_ecosystems,
+    rollout_workflows=_V9_LANDING.rollout_workflows,
+    revert_landing=RevertLanding(
+        change_class=DEPENDENCY_REVERT,
+        permitted_authors=frozenset({DISPATCH_APP}),
+        exempt_from_pace=True,
+        exempt_from_change_window=True,
+    ),
+    rationale=(
+        _V9_LANDING.rationale + " VERSION 14 DECLARES THE CONDITIONS ON THE SDS'S OWN REVERT "
+        "(`dependency-revert`), and changes nothing about the bump's. When the orchestrator "
+        "judges a bump it landed here bad, it points production back at the previous image and "
+        "opens the revert through its Dispatch App; until the revert lands, the default branch "
+        "describes a build production is not serving. So the revert is exempt from the pace and "
+        "the change window, which exist to bound CHANGES and would here hold back the remedy, "
+        "and it may be opened by the Dispatch App alone. This service cannot read who opened a "
+        "pull request: the author is declared here and enforced by the landing party, which also "
+        "asks itself whether it recorded opening this revert and whether it is the exact "
+        "inverse of the bump."
+    ),
+)
+
+
 # ---------------------------------------------------------------------------
-# Version 13 -- the version in force.
+# Version 14 -- the version in force.
 # ---------------------------------------------------------------------------
 
-# VERSION 12'S INERT POPULATION AND TERMS, with one more repository. The same authors, the same
-# exclusions, the same freshness condition and the same exempted authors.
-_V13_INERT: Final = InertLanding(
+# VERSION 13'S INERT POPULATION AND TERMS, unchanged: this version makes no statement about the
+# inert lane.
+_V14_INERT: Final = InertLanding(
     repositories=frozenset(
         {
             "alobarquest/orchestrator",
@@ -522,32 +629,29 @@ _V13_INERT: Final = InertLanding(
     require_head_current_with_base=True,
     non_ecosystem_authors=frozenset({FORK_SECURE_UPSTREAM_SYNC}),
     rationale=(
-        "The rule ADR-0038 declared, over the 11 repositories version 12 named and one more, with "
-        "the same authors. WHAT IS ADDED. alobarquest/sds-canary, by version 13, 2026-10-29: SDS "
-        "test canary that proves the automatic revert of a bad inert landing. Devon decided on "
-        "2026-10-24 that each fork joining the orchestrator's fork-sync lane is an explicit, "
-        "versioned grant in this policy; this version was generated by "
-        "`scripts/release_inert_repository.py`, which adds one repository and refuses the release "
-        "unless every other term projects unchanged. NOTHING ELSE IS WIDENED. The authors, the "
-        "excluded ecosystems, the freshness condition and the exempted authors are version 12's. "
-        "The deploying population and every term keyed off it are version 12's objects, unchanged. "
-        "The two populations remain disjoint."
+        "The rule ADR-0038 declared, over the 12 repositories version 13 named, with the same "
+        "authors. NOTHING IS ADDED OR WIDENED: the population, the authors, the excluded "
+        "ecosystems, the freshness condition and the exempted authors are version 13's. Version "
+        "14 changes only the deploying lane. The two populations remain disjoint."
     ),
 )
 
 
-V13: Final = DeployPolicy(
-    version=13,
-    decided="2026-10-29",
+V14: Final = DeployPolicy(
+    version=14,
+    decided="2026-10-30",
     rationale=(
-        "Version 12's populations and terms, with one repository added to the inert lane: "
-        "alobarquest/sds-canary. Nothing else is widened: the same deploying repositories, the "
-        "same change classes, the same risks, the same criteria, the same remedies, the same "
-        "rollout pins, the same conditions on the act, and the same inert authors and terms. WHY "
-        "IT EXISTS. SDS test canary that proves the automatic revert of a bad inert landing."
+        "Version 13's populations and terms, with one change class added to the deploying lane: "
+        "dependency-revert, the SDS's own revert of a bump it landed and judged bad (orchestrator "
+        "Landing Part 3b). Such a record is approved by policy on the same repositories, risk and "
+        "acceptance criteria as any other -- the revert's merge runs the same rollout -- with a "
+        "remedy of its own (restore the bump) and conditions on the act of its own: no pace, no "
+        "change window, and the Dispatch App as the only author. Nothing else is widened: the same "
+        "deploying repositories, the same criteria, the same bump remedies, the same rollout pins, "
+        "the same conditions on a bump, and the same inert population and terms."
     ),
     repositories=frozenset({"alobarquest/change-manager", "alobarquest/brain"}),
-    change_classes=frozenset({"dependency-update", "factory-delivery"}),
+    change_classes=frozenset({"dependency-update", "factory-delivery", "dependency-revert"}),
     risks=frozenset({"caution"}),
     acceptance_criteria={
         "alobarquest/change-manager": _V1_CHANGE_MANAGER_CRITERIA,
@@ -557,18 +661,18 @@ V13: Final = DeployPolicy(
         "alobarquest/change-manager": _V1_CHANGE_MANAGER_ROLLBACK,
         "alobarquest/brain": _V3_BRAIN_ROLLBACK,
     },
-    # The SAME OBJECT versions 9 to 12 declared: this version makes no statement about the deploying
-    # lane.
-    landing=_V9_LANDING,
-    inert_landing=_V13_INERT,
+    class_rollback_plans={"dependency-revert": _V14_REVERT_ROLLBACKS},
+    # Version 9's terms on a bump, and the revert's conditions beside them.
+    landing=_V14_LANDING,
+    inert_landing=_V14_INERT,
 )
 
 
-CURRENT_VERSION: Final = 13
+CURRENT_VERSION: Final = 14
 
 
 def current() -> DeployPolicy:
-    return V13
+    return V14
 
 
 def objections(policy: DeployPolicy, item: object) -> tuple[str, ...]:
@@ -587,7 +691,8 @@ def objections(policy: DeployPolicy, item: object) -> tuple[str, ...]:
         return ("repository_not_in_policy",)
 
     found: list[str] = []
-    if getattr(item, "change_class", None) not in policy.change_classes:
+    change_class = getattr(item, "change_class", None)
+    if change_class not in policy.change_classes:
         found.append("change_class_not_in_policy")
     if getattr(item, "risk", None) not in policy.risks:
         found.append("risk_not_in_policy")
@@ -599,8 +704,15 @@ def objections(policy: DeployPolicy, item: object) -> tuple[str, ...]:
         # remedy.
         found.append("acceptance_criteria_not_ratified")
 
+    # The remedy is the CLASS's when the version gives that class one (version 14's revert), and
+    # the repository's otherwise. A class with a remedy of its own that names no remedy for this
+    # repository ratifies none, which is an objection rather than a fall back to the bump's.
+    remedies = policy.rollback_plans
+    if isinstance(change_class, str) and change_class in policy.class_rollback_plans:
+        remedies = policy.class_rollback_plans[change_class]
+    remedy = remedies.get(key)
     rollback = getattr(item, "rollback_plan", None)
-    if rollback != policy.rollback_plans[key].as_stored():
+    if remedy is None or rollback != remedy.as_stored():
         found.append("rollback_plan_not_ratified")
 
     return tuple(found)
@@ -629,6 +741,16 @@ def landing_conditions_dict(policy: DeployPolicy) -> dict:
     # and false of the rule, since those versions decide by update type and exclude by omission.
     if policy.landing.excluded_ecosystems is not None:
         served["excluded_ecosystems"] = sorted(policy.landing.excluded_ecosystems)
+    # Version 14. OMITTED by every version that admits no revert class, so each serves the bytes it
+    # always served -- and a landing party that cannot read the block lands no revert by it.
+    revert = policy.landing.revert_landing
+    if revert is not None:
+        served["revert_landing"] = {
+            "change_class": revert.change_class,
+            "permitted_authors": sorted(revert.permitted_authors),
+            "exempt_from_pace": revert.exempt_from_pace,
+            "exempt_from_change_window": revert.exempt_from_change_window,
+        }
     return served
 
 
@@ -704,7 +826,11 @@ def policy_dict(policy: DeployPolicy) -> dict:
 # on request, and `tests/test_ratified_rollout_policy.py` holds the committed bytes to this
 # function so the file cannot drift from the code.
 RATIFIED_ROLLOUT_POLICY_PATH: Final = "contracts/ratified_rollout_policy.json"
-RATIFIED_ROLLOUT_SCHEMA_VERSION: Final = 1
+# 2 since version 14: every repository entry carries `class_rollback_plans`, the remedy of each
+# class that has one of its own, so the orchestrator holds its derived revert remedy to this file
+# as it holds the bump's. A reader that knows only schema 1 refuses the file rather than comparing
+# half of it.
+RATIFIED_ROLLOUT_SCHEMA_VERSION: Final = 2
 
 
 def ratified_rollout_dict(policy: DeployPolicy) -> dict:
@@ -723,6 +849,10 @@ def ratified_rollout_dict(policy: DeployPolicy) -> dict:
             "rollout_workflow": {"path": pin.path, "blob_sha": pin.blob_sha},
             "acceptance_criteria": list(criteria),
             "rollback_plan": policy.rollback_plans[repository].as_stored(),
+            "class_rollback_plans": {
+                change_class: plans[repository].as_stored()
+                for change_class, plans in sorted(policy.class_rollback_plans.items())
+            },
         }
     return {
         "schema_version": RATIFIED_ROLLOUT_SCHEMA_VERSION,

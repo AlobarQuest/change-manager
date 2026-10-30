@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from app.deploy_policy import (
+    DEPENDENCY_REVERT,
     RATIFIED_ROLLOUT_POLICY_PATH,
     current,
     ratified_rollout_dict,
@@ -43,6 +44,21 @@ def test_the_projection_carries_exactly_what_objections_compares() -> None:
         assert entry["rollback_plan"] == policy.rollback_plans[repository].as_stored()
         pin = policy.landing.rollout_workflows[repository]
         assert entry["rollout_workflow"] == {"path": pin.path, "blob_sha": pin.blob_sha}
+
+
+def test_the_projection_carries_each_class_remedy_and_names_its_schema() -> None:
+    """Schema 2: a class with a remedy of its own (version 14's revert) carries it per repository,
+    so the orchestrator holds its derived revert remedy to this one as it does the bump's."""
+    policy = current()
+    projected = json.loads(COMMITTED.read_text(encoding="utf-8"))
+
+    assert projected["schema_version"] == 2
+    for repository, entry in projected["repositories"].items():
+        plans = policy.class_rollback_plans
+        assert entry["class_rollback_plans"] == {
+            change_class: plans[change_class][repository].as_stored() for change_class in plans
+        }
+        assert DEPENDENCY_REVERT in entry["class_rollback_plans"]
 
 
 @pytest.mark.parametrize("version", sorted(REGISTRY))
