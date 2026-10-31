@@ -184,6 +184,10 @@ STATUS_MOVING_ROUTES: Final = frozenset(
 # permission. What is new is that the work source's SUCCESS direction is retirement-shaped, where
 # the deploy source's is a settlement -- because a settlement needs the deciding server to derive
 # the fact, and this one has no orchestrator egress and cannot.
+#
+# The deploy supersession is the sixth, and the third copy of the retirement shape: coordinates
+# in, checked against the record's own reduced observation, `resolved` out, and no field by which
+# a caller could ask for anything else. It belongs to `observe` because its caller is the watcher.
 CALLER_CHOSEN_STATUS_ROUTES: Final = STATUS_MOVING_ROUTES - {
     ("POST", "/api/deploy-changes"),
     ("POST", "/api/items/{item_id}/deploy-retirement"),

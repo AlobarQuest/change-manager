@@ -25,8 +25,9 @@ The event says WHY, naming the pull request, because a machine resolving a decis
 is only honest if the chain reads: a person approved it, the subject went away, the producer
 retired it.
 
-THE SECOND RETIREMENT: A FAILED ROLLOUT THAT A LATER GREEN ONE HAS PASSED. A record whose rollout
-failed stays `approved` with a `failed` verdict, because nothing settles a failure. When the next
+THE SECOND RETIREMENT: A ROLLOUT THAT DID NOT SUCCEED, PASSED BY A LATER GREEN ONE. A record whose
+rollout did not succeed (any verdict but `success`: `failed`, `unknown` or `absent`) stays
+`approved`, because nothing settles a rollout that did not confirm. When the next
 merge to the same repository rolls out green, that run carries the failed commit with it (the
 image is built from the branch, not from the commit), so the failed record describes a change
 production now serves. `supersede_deploy_change` retires it, and the argument is the one above:
@@ -34,10 +35,10 @@ the outcome is `resolved`, which no landing term accepts, so a lie can only with
 that was never going to be needed. It is on the `observe` scope, not `propose`, because the
 caller here is the deploy watcher, which already holds the rollout facts.
 
-The route cannot take the superseding run's word that the failure was real: this service reads
-its OWN reduced observation, and refuses unless that says the rollout failed on a commit other
-than the superseding one. A green record, a record with no observation, and a record whose
-history names two merge commits (no single answer) are all refused rather than guessed at.
+The route cannot take the superseding run's word that the rollout did not succeed: this service
+reads its OWN reduced observation, and refuses unless that exists, is not a success, and names a
+commit other than the superseding one. A green record, a record with no observation, and a record
+whose history names two merge commits (no single answer) are all refused rather than guessed at.
 """
 
 from datetime import UTC, datetime
@@ -134,12 +135,12 @@ def supersede_deploy_change(
     superseding_commit: str,
     actor: str,
 ) -> bool:
-    """Retire a record whose rollout failed and was passed by a later green one. We commit.
+    """Retire a record whose rollout did not succeed and was passed by a green one. We commit.
 
     Returns whether it moved; False means it was already terminal. The guards are positive
     checks, in `retire_deploy_change`'s order: deploy source, the named pull request, then this
     server's own reduced observation must exist, must not be a success, and must name a merge
-    commit other than the superseding one. The last clause is what stops a failed commit from
+    commit other than the superseding one. The last clause is what stops a commit from
     superseding itself: a re-run of the same commit is not a later rollout.
     """
     if item.source != DEPLOY_SOURCE:
@@ -160,10 +161,9 @@ def supersede_deploy_change(
         raise RetirementRefused(f"item {item.id} has no single rollout observation to supersede")
     if observed.verdict == VERDICT_SUCCESS:
         raise RetirementRefused(f"item {item.id}'s rollout succeeded; nothing to supersede")
-    if observed.merge_commit_sha.lower() == superseding_commit.lower():
+    if observed.merge_commit_sha == superseding_commit:
         raise RetirementRefused(
-            f"item {item.id}'s failed rollout is of {superseding_commit}; a commit cannot "
-            "supersede itself"
+            f"item {item.id}'s rollout is of {superseding_commit}; a commit cannot supersede itself"
         )
 
     prev = item.status
@@ -179,10 +179,10 @@ def supersede_deploy_change(
         from_status=prev,
         to_status=RETIRED_STATUS,
         detail=(
-            f"{item.target_repository}#{pull_request_number} rolled out {observed.verdict} at "
-            f"{observed.merge_commit_sha}; run {superseding_run_id} at {superseding_commit} "
-            "rolled out after it and succeeded, so production serves a later build than this "
-            "record's"
+            f"{item.target_repository}#{pull_request_number}: its rollout's verdict was "
+            f"{observed.verdict} at {observed.merge_commit_sha}; run {superseding_run_id} at "
+            f"{superseding_commit} rolled out after it and succeeded, so production serves a "
+            "later build than this record's"
         ),
     )
     db.commit()

@@ -446,7 +446,7 @@ def test_no_narrow_scope_can_reach_the_deploy_policy_with_a_write(client, scoped
         assert client.post("/api/deploy-policy", headers=_bearer(token)).status_code in (403, 405)
 
 
-def test_the_caller_chosen_exception_is_exactly_the_five_routes_that_cannot_pick_a_status() -> None:
+def test_the_caller_chosen_exception_is_exactly_the_six_routes_that_cannot_pick_a_status() -> None:
     """`CALLER_CHOSEN_STATUS_ROUTES` states a judgment, so it needs its own cross-check.
 
     A mutation caught this: emptying it left every scope test green, because an empty set
@@ -468,6 +468,9 @@ def test_the_caller_chosen_exception_is_exactly_the_five_routes_that_cannot_pick
 
     ADR-0029's work retirement is the fifth and returns to the fact-shaped kind: an observation in,
     `resolved` out, and no field by which a caller could ask for anything else.
+
+    The deploy supersession is the sixth, the same shape again: coordinates in, checked against the
+    record's own observation, `resolved` out. Its scope is `observe`, not `propose`.
     """
     exception = STATUS_MOVING_ROUTES - CALLER_CHOSEN_STATUS_ROUTES
     assert exception == {

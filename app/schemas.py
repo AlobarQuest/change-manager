@@ -319,7 +319,18 @@ class DeploySupersessionIn(BaseModel):
     superseding_commit: str
     actor: str
 
-    @field_validator("superseding_commit", "actor")
+    @field_validator("superseding_commit")
+    @classmethod
+    def _commit_is_an_object_name(cls, v: str) -> str:
+        # Lower-cased and 40 characters, as `merge_commit_sha` is, so the guard that refuses a
+        # commit superseding itself compares two canonical spellings and a short form of the
+        # failed commit cannot slip past it.
+        text = _required_text(v, "superseding_commit").lower()
+        if not _OBJECT_NAME.fullmatch(text):
+            raise ValueError("superseding_commit must be a 40-character git object name")
+        return text
+
+    @field_validator("actor")
     @classmethod
     def _not_blank(cls, v: str, info) -> str:
         return _required_text(v, info.field_name)

@@ -178,6 +178,58 @@ def test_the_failed_commit_cannot_supersede_itself(client, m2m, failed, db):
     assert item is not None and item.status != RETIRED_STATUS
 
 
+def test_a_short_form_of_the_failed_commit_is_refused_as_malformed(client, m2m, failed, db):
+    """A prefix of the failed commit would otherwise differ from it and pass the self guard."""
+    response = _supersede(client, m2m, failed["id"], superseding_commit=FAILED_COMMIT[:7])
+    assert response.status_code == 422
+    item = db.get(ChangeItem, failed["id"])
+    assert item is not None and item.status != RETIRED_STATUS
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "not-a-commit", "z" * 40, LATER_COMMIT + "0"])
+def test_a_malformed_superseding_commit_is_a_422(client, m2m, failed, bad):
+    assert _supersede(client, m2m, failed["id"], superseding_commit=bad).status_code == 422
+
+
+def test_a_pending_record_moves_to_resolved(client, m2m, failed, db):
+    item = db.get(ChangeItem, failed["id"])
+    assert item is not None and item.status == "pending"
+    assert _supersede(client, m2m, failed["id"]).status_code == 200
+    db.refresh(item)
+    assert item.status == RETIRED_STATUS
+
+
+@pytest.mark.parametrize("conclusion", ["cancelled", None])
+def test_a_rollout_that_was_inconclusive_or_absent_is_superseded_too(
+    client, m2m, record, db, conclusion
+):
+    """The rule is "not a success", which is wider than `failed`: `unknown` and `absent` are
+    rollouts that never confirmed, and a later green one passes them just the same."""
+    overrides = {"run_conclusion": conclusion}
+    if conclusion is None:
+        overrides.update(
+            run_id=None,
+            run_attempt=None,
+            run_url=None,
+            run_concluded_at=None,
+            rollout_job_conclusion=None,
+            trigger_step_conclusion=None,
+        )
+    _observe(client, m2m, record["id"], **overrides)
+    assert _supersede(client, m2m, record["id"]).status_code == 200
+    item = db.get(ChangeItem, record["id"])
+    assert item is not None and item.status == RETIRED_STATUS
+
+
+def test_a_history_naming_two_merge_commits_is_refused(client, m2m, failed, db):
+    """Two landings mean there is no single answer to supersede, so the route does not guess."""
+    _observe(client, m2m, failed["id"], merge_commit_sha=LATER_COMMIT[:39] + "1", run_id=2)
+    response = _supersede(client, m2m, failed["id"], superseding_commit="b" * 40)
+    assert response.status_code == 409
+    item = db.get(ChangeItem, failed["id"])
+    assert item is not None and item.status != RETIRED_STATUS
+
+
 def test_the_route_rejects_a_status_field(client, m2m, failed):
     response = _supersede(client, m2m, failed["id"], status="approved")
     assert response.status_code == 422
