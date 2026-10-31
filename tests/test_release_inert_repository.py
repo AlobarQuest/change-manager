@@ -141,9 +141,7 @@ def test_a_release_adds_one_repository_and_the_released_tree_passes_its_gates(tm
     history = (copy / TOUCHED[1]).read_text(encoding="utf-8")
     assert f"_V{n}_INERT: Final = InertLanding(" in history
     assert f"        V{n},\n        V{n + 1},\n    )\n}}" in history
-    assert re.match(
-        rf"The SAME OBJECT versions \d+ to {n} declared", _landing_comment(policy, n + 1)
-    )
+    assert re.match(_same_object(n), _landing_comment(policy, n + 1))
 
     # The released tree's own gates: lint, format, and the policy suite, whose generic per-release
     # test covers version N+1. The rest of the suite does not read the policy modules.
@@ -184,6 +182,12 @@ def test_a_second_release_builds_on_the_first(copy: Path):
     assert _reported(done) == {"status": "released", "version": n + 2, "repository": f"{PROBE}-2"}
 
 
+def _same_object(n: int) -> str:
+    """The generated comment's subject: version N's deploying-lane term, which versions before it
+    may have declared too (`versions 9 to 13`) or which N introduced (`version 14`)."""
+    return rf"The SAME OBJECT (?:versions \d+ to {n}|version {n}) declared"
+
+
 def _landing_comment(source: str, version: int) -> str:
     """The comment on version `version`'s deploying-lane term, as one line of prose."""
     block = source[source.index(f"V{version}: Final = DeployPolicy(") :]
@@ -205,8 +209,7 @@ def test_the_deploying_lane_comment_is_written_from_the_facts_when_absent(copy: 
     done = release(copy)
     assert done.returncode == 0, done.stderr
     assert re.fullmatch(
-        rf"The SAME OBJECT versions \d+ to {n} declared: this version makes no statement about "
-        r"the deploying lane\.",
+        _same_object(n) + r": this version makes no statement about the deploying lane\.",
         _landing_comment(module.read_text(encoding="utf-8"), n + 1),
     )
 
@@ -308,6 +311,7 @@ def test_a_usage_error_or_help_is_one_not_a_success_code(shared_copy: Path, args
         ("reformat_contract", "(c) the contract is not what current() renders"),
         ("stale_current_version", "(d) CURRENT_VERSION is {old} and current() is version {new}"),
         ("rebind_criteria", "(b) version {new} changes more than the inert population"),
+        ("rebind_class_remedy", "(b) version {new} changes more than the inert population"),
         ("overlong_line", "(e) ruff check"),
         ("stale_current_function", "(d) CURRENT_VERSION is {new} and current() is version {old}"),
     ],
