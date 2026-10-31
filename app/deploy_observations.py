@@ -26,8 +26,10 @@ THIS server derived. The old sentence is corrected here rather than quietly dele
 `app/scopes.py` corrected its own in increment 5a: a file whose subject is "what an observation
 does" giving the wrong answer is the drift this repository keeps paying for.
 
-Whether a change is FINISHED is now answered two ways and they do not overlap. Policy grants,
-a human revokes, and an observed landing settles — none of them is a caller choosing a status.
+Whether a change is FINISHED is now answered several ways and they do not overlap. Policy grants,
+a human revokes, an observed landing settles, and a rollout that did not succeed is retired once
+a later green one passes it (`app/deploy_retirement.py`) — none of them is a caller choosing a
+status.
 """
 
 from __future__ import annotations

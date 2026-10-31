@@ -145,7 +145,10 @@ def test_the_status_moving_routes_a_narrow_scope_reaches_are_named_and_bounded(s
             ("POST", "/api/work-changes"),
             ("POST", "/api/items/{item_id}/work-retirement"),
         },
-        OBSERVE: {("POST", "/api/items/{item_id}/deploy-observation")},
+        OBSERVE: {
+            ("POST", "/api/items/{item_id}/deploy-observation"),
+            ("POST", "/api/items/{item_id}/deploy-supersession"),
+        },
     }.get(scope, set())
     assert reached == expected, f"the '{scope}' scope reaches {sorted(reached)}"
 
@@ -242,6 +245,7 @@ def test_no_narrow_scope_reaches_any_write_except_the_four_they_exist_for() -> N
         ("POST", "/api/deploy-changes"),
         ("POST", "/api/items/{item_id}/deploy-observation"),
         ("POST", "/api/items/{item_id}/deploy-retirement"),
+        ("POST", "/api/items/{item_id}/deploy-supersession"),
         # ADR-0026. The work-proposal ingress, reachable by `propose`. It is the same act as the
         # deploy proposal and strictly weaker: that one runs the policy and can write `approved`,
         # this one can reach `pending` and nothing else.
@@ -442,7 +446,7 @@ def test_no_narrow_scope_can_reach_the_deploy_policy_with_a_write(client, scoped
         assert client.post("/api/deploy-policy", headers=_bearer(token)).status_code in (403, 405)
 
 
-def test_the_caller_chosen_exception_is_exactly_the_five_routes_that_cannot_pick_a_status() -> None:
+def test_the_caller_chosen_exception_is_exactly_the_six_routes_that_cannot_pick_a_status() -> None:
     """`CALLER_CHOSEN_STATUS_ROUTES` states a judgment, so it needs its own cross-check.
 
     A mutation caught this: emptying it left every scope test green, because an empty set
@@ -464,17 +468,21 @@ def test_the_caller_chosen_exception_is_exactly_the_five_routes_that_cannot_pick
 
     ADR-0029's work retirement is the fifth and returns to the fact-shaped kind: an observation in,
     `resolved` out, and no field by which a caller could ask for anything else.
+
+    The deploy supersession is the sixth, the same shape again: coordinates in, checked against the
+    record's own observation, `resolved` out. Its scope is `observe`, not `propose`.
     """
     exception = STATUS_MOVING_ROUTES - CALLER_CHOSEN_STATUS_ROUTES
     assert exception == {
         ("POST", "/api/deploy-changes"),
         ("POST", "/api/items/{item_id}/deploy-retirement"),
         ("POST", "/api/items/{item_id}/deploy-observation"),
+        ("POST", "/api/items/{item_id}/deploy-supersession"),
         ("POST", "/api/work-changes"),
         ("POST", "/api/items/{item_id}/work-retirement"),
-    }, f"the exception is no longer exactly the five routes it names: {sorted(exception)}"
+    }, f"the exception is no longer exactly the six routes it names: {sorted(exception)}"
     assert CALLER_CHOSEN_STATUS_ROUTES < STATUS_MOVING_ROUTES
-    assert len(CALLER_CHOSEN_STATUS_ROUTES) == len(STATUS_MOVING_ROUTES) - 5
+    assert len(CALLER_CHOSEN_STATUS_ROUTES) == len(STATUS_MOVING_ROUTES) - 6
 
 
 def test_the_propose_credential_reaches_the_deploy_retirement_it_exists_for(
@@ -644,3 +652,22 @@ def test_the_propose_credential_still_cannot_resolve_anything_else(
         "/api/items/1/resolve", json={"actor": "producer"}, headers=_bearer(TOKENS["propose"])
     )
     assert response.status_code == 403
+
+
+def test_the_observe_credential_reaches_the_supersession_and_propose_does_not(
+    client: TestClient, scoped: None
+) -> None:
+    """The route is the deploy watcher's, so `observe` reaches it and `propose` -- which holds
+    `deploy-retirement` -- does not. 404 on an unknown item proves the route was reached."""
+    body = {
+        "pull_request_number": 42,
+        "superseding_run_id": 1,
+        "superseding_commit": "a" * 40,
+        "actor": "deploy-watcher",
+    }
+    path = "/api/items/4242/deploy-supersession"
+    assert client.post(path, json=body, headers=_bearer(TOKENS["observe"])).status_code == 404
+    for scope in ("read", "propose"):
+        assert client.post(path, json=body, headers=_bearer(TOKENS[scope])).status_code == 403
+    assert ("POST", "/api/items/{item_id}/deploy-supersession") not in SCOPE_ROUTES[PROPOSE]
+    assert ("POST", "/api/items/{item_id}/deploy-retirement") not in SCOPE_ROUTES[OBSERVE]

@@ -24,12 +24,28 @@ producer is the only holder of that scope.
 The event says WHY, naming the pull request, because a machine resolving a decision a human made
 is only honest if the chain reads: a person approved it, the subject went away, the producer
 retired it.
+
+THE SECOND RETIREMENT: A ROLLOUT THAT DID NOT SUCCEED, PASSED BY A LATER GREEN ONE. A record whose
+rollout did not succeed (any verdict but `success`: `failed`, `unknown` or `absent`) stays
+`approved`, because nothing settles a rollout that did not confirm. When the next
+merge to the same repository rolls out green, that run carries the failed commit with it (the
+image is built from the branch, not from the commit), so the failed record describes a change
+production now serves. `supersede_deploy_change` retires it, and the argument is the one above:
+the outcome is `resolved`, which no landing term accepts, so a lie can only withhold a landing
+that was never going to be needed. It is on the `observe` scope, not `propose`, because the
+caller here is the deploy watcher, which already holds the rollout facts.
+
+The route cannot take the superseding run's word that the rollout did not succeed: this service
+reads its OWN reduced observation, and refuses unless that exists, is not a success, and names a
+commit other than the superseding one. A green record, a record with no observation, and a record
+whose history names two merge commits (no single answer) are all refused rather than guessed at.
 """
 
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.deploy_observations import VERDICT_SUCCESS, current_observation, observations_for
 from app.events import record_event
 from app.models import ChangeItem
 from app.sources import DEPLOY_SOURCE
@@ -46,6 +62,7 @@ _TERMINAL = frozenset({"resolved", "wontfix"})
 
 RETIRED_STATUS = "resolved"
 RETIRED_EVENT = "retired"
+SUPERSEDED_EVENT = "superseded"
 
 
 class RetirementRefused(Exception):
@@ -103,6 +120,69 @@ def retire_deploy_change(
             f"{item.target_repository}#{pull_request_number} was closed without merging, so the "
             "change this record stands for can no longer happen; retired against that fact "
             "rather than against its absence"
+        ),
+    )
+    db.commit()
+    return True
+
+
+def supersede_deploy_change(
+    db: Session,
+    item: ChangeItem,
+    *,
+    pull_request_number: int,
+    superseding_run_id: int,
+    superseding_commit: str,
+    actor: str,
+) -> bool:
+    """Retire a record whose rollout did not succeed and was passed by a green one. We commit.
+
+    Returns whether it moved; False means it was already terminal. The guards are positive
+    checks, in `retire_deploy_change`'s order: deploy source, the named pull request, then this
+    server's own reduced observation must exist, must not be a success, and must name a merge
+    commit other than the superseding one. The last clause is what stops a commit from
+    superseding itself: a re-run of the same commit is not a later rollout.
+    """
+    if item.source != DEPLOY_SOURCE:
+        raise RetirementRefused(
+            f"item {item.id} is a '{item.source}' change; this route retires "
+            f"'{DEPLOY_SOURCE}' records only"
+        )
+    if item.pull_request_number != pull_request_number:
+        raise RetirementRefused(
+            f"item {item.id} is about pull request {item.pull_request_number}, "
+            f"not {pull_request_number}"
+        )
+    if item.status in _TERMINAL:
+        return False
+
+    observed = current_observation(observations_for(db, item.id))
+    if observed is None:
+        raise RetirementRefused(f"item {item.id} has no single rollout observation to supersede")
+    if observed.verdict == VERDICT_SUCCESS:
+        raise RetirementRefused(f"item {item.id}'s rollout succeeded; nothing to supersede")
+    if observed.merge_commit_sha == superseding_commit:
+        raise RetirementRefused(
+            f"item {item.id}'s rollout is of {superseding_commit}; a commit cannot supersede itself"
+        )
+
+    prev = item.status
+    item.status = RETIRED_STATUS
+    # `decided_by` is the latest writer, as in `retire_deploy_change`.
+    item.decided_by = actor
+    item.decided_at = datetime.now(UTC)
+    record_event(
+        db,
+        item,
+        actor=actor,
+        event_type=SUPERSEDED_EVENT,
+        from_status=prev,
+        to_status=RETIRED_STATUS,
+        detail=(
+            f"{item.target_repository}#{pull_request_number}: its rollout's verdict was "
+            f"{observed.verdict} at {observed.merge_commit_sha}; run {superseding_run_id} at "
+            f"{superseding_commit} rolled out after it and succeeded, so production serves a "
+            "later build than this record's"
         ),
     )
     db.commit()

@@ -305,6 +305,37 @@ class DeployRetirementIn(BaseModel):
         return _required_text(v, info.field_name)
 
 
+class DeploySupersessionIn(BaseModel):
+    """A later green rollout that passed a record's failed one. No status field, as above.
+
+    The superseding run and commit are coordinates for the event, so the chain names what
+    superseded the record; the server decides whether the record's own observation permits it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    pull_request_number: int = Field(gt=0, le=2_147_483_647, strict=True)
+    superseding_run_id: int = Field(gt=0, strict=True)
+    superseding_commit: str
+    actor: str
+
+    @field_validator("superseding_commit")
+    @classmethod
+    def _commit_is_an_object_name(cls, v: str) -> str:
+        # Lower-cased and 40 characters, as `merge_commit_sha` is, so the guard that refuses a
+        # commit superseding itself compares two canonical spellings and a short form of the
+        # failed commit cannot slip past it.
+        text = _required_text(v, "superseding_commit").lower()
+        if not _OBJECT_NAME.fullmatch(text):
+            raise ValueError("superseding_commit must be a 40-character git object name")
+        return text
+
+    @field_validator("actor")
+    @classmethod
+    def _not_blank(cls, v: str, info) -> str:
+        return _required_text(v, info.field_name)
+
+
 class WorkRetirementIn(BaseModel):
     """An observed fact about a work record's subject (ADR-0029).
 

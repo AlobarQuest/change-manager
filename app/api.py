@@ -20,7 +20,11 @@ from app.deploy_observations import (
 )
 from app.deploy_policy import current as current_policy
 from app.deploy_policy import landing_conditions_dict, objections, policy_dict
-from app.deploy_retirement import RetirementRefused, retire_deploy_change
+from app.deploy_retirement import (
+    RetirementRefused,
+    retire_deploy_change,
+    supersede_deploy_change,
+)
 from app.deploy_settlement import record_rollout_and_settle
 from app.events import record_event
 from app.guards import require_executor, require_policy_approver
@@ -32,6 +36,7 @@ from app.schemas import (
     DeployChangeIn,
     DeployObservationIn,
     DeployRetirementIn,
+    DeploySupersessionIn,
     OutcomeIn,
     SyncRequest,
     SyncSummary,
@@ -198,6 +203,33 @@ def retire_deploy(item_id: int, body: DeployRetirementIn, db: Session = Depends(
             item,
             observation=body.observation,
             pull_request_number=body.pull_request_number,
+            actor=body.actor,
+        )
+    except RetirementRefused as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return _item_dict(item)
+
+
+@router.post("/items/{item_id}/deploy-supersession")
+def supersede_deploy(
+    item_id: int, body: DeploySupersessionIn, db: Session = Depends(get_db)
+) -> dict:
+    """Retire a deploy record whose failed rollout a later green rollout has passed.
+
+    The caller supplies coordinates, not a status; the server checks them against the record's own
+    observation and the only outcome is `resolved`. `app/deploy_retirement.py` carries the
+    argument. Idempotent: a record already terminal answers 200 unchanged.
+    """
+    item = db.get(ChangeItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="item not found")
+    try:
+        supersede_deploy_change(
+            db,
+            item,
+            pull_request_number=body.pull_request_number,
+            superseding_run_id=body.superseding_run_id,
+            superseding_commit=body.superseding_commit,
             actor=body.actor,
         )
     except RetirementRefused as e:
