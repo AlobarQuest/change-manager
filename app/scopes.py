@@ -89,7 +89,14 @@ SCOPE_ROUTES: Final[dict[str, frozenset[tuple[str, str]]]] = {
         # holding this scope is not the same as being able to use all of it.
         ("POST", "/api/items/{item_id}/work-retirement"),
     },
-    OBSERVE: _READ_ROUTES | {("POST", "/api/items/{item_id}/deploy-observation")},
+    OBSERVE: _READ_ROUTES
+    | {
+        ("POST", "/api/items/{item_id}/deploy-observation"),
+        # A later green rollout retires the failed one it passed. The deploy watcher holds this
+        # scope and already holds the rollout facts; `app/deploy_retirement.py` carries the
+        # argument. Not in `propose`: that scope's producer sees pull requests, not rollouts.
+        ("POST", "/api/items/{item_id}/deploy-supersession"),
+    },
 }
 
 NARROW_SCOPES: Final = tuple(SCOPE_ROUTES)
@@ -137,6 +144,8 @@ STATUS_MOVING_ROUTES: Final = frozenset(
         # accident. `app/deploy_settlement.py` carries the argument for why an `observe`
         # credential may cause it.
         ("POST", "/api/items/{item_id}/deploy-observation"),
+        # A superseded failed rollout is retired to `resolved`, so it moves a status.
+        ("POST", "/api/items/{item_id}/deploy-supersession"),
     }
 )
 
@@ -179,6 +188,7 @@ CALLER_CHOSEN_STATUS_ROUTES: Final = STATUS_MOVING_ROUTES - {
     ("POST", "/api/deploy-changes"),
     ("POST", "/api/items/{item_id}/deploy-retirement"),
     ("POST", "/api/items/{item_id}/deploy-observation"),
+    ("POST", "/api/items/{item_id}/deploy-supersession"),
     ("POST", "/api/work-changes"),
     ("POST", "/api/items/{item_id}/work-retirement"),
 }
