@@ -1,6 +1,6 @@
 """Which pipeline an item came from, and what that implies. THREE properties, TWO sets.
 
-A **derived** item (`drift`, `security`, `rotation`) is re-asserted by every scan of
+A **derived** item (`drift`, `security`) is re-asserted by every scan of
 its pipeline, so `reconcile` can read absence from a batch as "the drift cleared" and
 resolve the item. A **proposed** item is asserted once, by a caller, and will never
 appear in any scan — so that same sweep would mark it resolved by a pipeline that has

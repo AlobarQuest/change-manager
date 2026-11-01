@@ -118,7 +118,7 @@ ROT_BODY = {
     "generated_at": "t",
     "source_report": "rotation-scan.json",
     "escalations": [ROT_ESC],
-    "source": "rotation",
+    "source": "audit",
 }
 
 
@@ -131,7 +131,7 @@ def test_dashboard_source_filter(client):
     client.post("/api/sync", json=BODY, headers=APIH)  # a drift item ("app1")
     client.post("/api/sync", json=ROT_BODY, headers=APIH)  # a rotation item ("bookingapp")
 
-    r = client.get("/?source=rotation", headers=SSO)
+    r = client.get("/?source=audit", headers=SSO)
     assert r.status_code == 200
     assert "bookingapp" in r.text
     assert "app1" not in r.text  # drift filtered out
