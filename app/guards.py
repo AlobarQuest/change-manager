@@ -18,8 +18,8 @@ def require_executor(it: ChangeItem) -> None:
     """Refuse every door into the EXECUTION lifecycle for a proposed change.
 
     The window executor makes THREE calls, not two -- it lists, claims, and then posts an
-    outcome (`run-window.ts` getApproved/claim/postOutcome, and `security-executor.ts`
-    likewise). Guarding only `claim` leaves `outcome` reachable on an unclaimed item, which
+    outcome (`run-window.ts` getApproved/claim/postOutcome). Guarding only `claim` leaves
+    `outcome` reachable on an unclaimed item, which
     writes a `ChangeAttempt` and an `attempt_done` event asserting that an agent applied a
     deploy nothing performed -- and that event ships to the tamper-evident factory-events
     chain. `outcome` is unreachable in practice only because the executor skips an item

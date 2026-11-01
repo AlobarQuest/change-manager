@@ -118,7 +118,7 @@ ROT_BODY = {
     "generated_at": "t",
     "source_report": "rotation-scan.json",
     "escalations": [ROT_ESC],
-    "source": "rotation",
+    "source": "audit",
 }
 
 
@@ -131,10 +131,21 @@ def test_dashboard_source_filter(client):
     client.post("/api/sync", json=BODY, headers=APIH)  # a drift item ("app1")
     client.post("/api/sync", json=ROT_BODY, headers=APIH)  # a rotation item ("bookingapp")
 
-    r = client.get("/?source=rotation", headers=SSO)
+    r = client.get("/?source=audit", headers=SSO)
     assert r.status_code == 200
     assert "bookingapp" in r.text
     assert "app1" not in r.text  # drift filtered out
 
     r_all = client.get("/?source=all", headers=SSO)
     assert "bookingapp" in r_all.text and "app1" in r_all.text
+
+
+def test_item_detail_shows_a_manual_remediation(client, db):
+    import app.auth as auth
+
+    auth.settings.m2m_token = hashed("full", "t")
+    wa.settings.dev_user = ""
+    escalation = {**ESC, "plan": {"root_cause": "x", "remediation": {"manual": ["Mint a new key"]}}}
+    client.post("/api/sync", json={**BODY, "escalations": [escalation]}, headers=APIH)
+    iid = db.query(ChangeItem).one().id
+    assert "Mint a new key" in client.get(f"/items/{iid}", headers=SSO).text

@@ -102,6 +102,8 @@
 <h3>Plan</h3>
 <p><strong>Root cause:</strong> {{ it.plan.get("root_cause", "—") }}</p>
 {% if it.plan.get("steps") %}<ol>{% for s in it.plan["steps"] %}<li>{{ s }}</li>{% endfor %}</ol>{% endif %}
+{% set manual = (it.plan.get("remediation") or {}).get("manual") %}
+{% if manual %}<ul>{% for s in manual %}<li>{{ s }}</li>{% endfor %}</ul>{% endif %}
 <p><strong>Tools:</strong> {{ (it.plan.get("infraops_tools") or []) | join(", ") or "—" }}</p>
 <p><strong>Rollback:</strong> {{ it.plan.get("rollback", "—") }} &middot;
    <strong>Window hint:</strong> {{ it.plan.get("cm_window_hint", "—") }}</p>

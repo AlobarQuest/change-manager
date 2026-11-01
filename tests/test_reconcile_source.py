@@ -122,13 +122,13 @@ def rot_req(escalations):
         generated_at="2026-06-18T03:00:00Z",
         source_report="rotation-scan-2026-06-18.json",
         escalations=escalations,
-        source="rotation",
+        source="audit",
     )
 
 
 def test_rotation_sync_creates_rotation_item(db):
     reconcile(db, rot_req([rot_esc()]))
-    it = db.query(ChangeItem).filter_by(source="rotation").one()
+    it = db.query(ChangeItem).filter_by(source="audit").one()
     assert it.status == "pending"
     assert it.identity == "prod::rotation::dk1"
     assert it.risk == "caution"
@@ -145,4 +145,4 @@ def test_rotation_sync_does_not_resolve_drift_or_security(db):
 def test_rotation_item_resolves_when_absent_from_its_own_sync(db):
     reconcile(db, rot_req([rot_esc()]))
     reconcile(db, rot_req([]))  # the cred was rotated / no longer reported
-    assert db.query(ChangeItem).filter_by(source="rotation").one().status == "resolved"
+    assert db.query(ChangeItem).filter_by(source="audit").one().status == "resolved"

@@ -55,7 +55,7 @@ def test_drift_and_security_syncs_leave_a_deploy_change_untouched(db, deploy_pay
 
     reconcile(db, sync_req([an_escalation()], "drift"))
     reconcile(db, sync_req([], "security"))
-    reconcile(db, sync_req([], "rotation"))
+    reconcile(db, sync_req([], "audit"))
 
     db.refresh(item)
     assert item.status == status
@@ -217,7 +217,7 @@ def test_the_handoff_watchdog_cannot_reach_a_deploy_change(db, deploy_payload):
     item.handed_off_at = datetime.now(UTC) - timedelta(days=365)
     db.commit()
 
-    for source in ("drift", "security", "rotation", "deploy"):
+    for source in ("drift", "security", "audit", "deploy"):
         revert_stale_handoffs(
             db,
             now=datetime.now(UTC),
