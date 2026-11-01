@@ -138,3 +138,14 @@ def test_dashboard_source_filter(client):
 
     r_all = client.get("/?source=all", headers=SSO)
     assert "bookingapp" in r_all.text and "app1" in r_all.text
+
+
+def test_item_detail_shows_a_manual_remediation(client, db):
+    import app.auth as auth
+
+    auth.settings.m2m_token = hashed("full", "t")
+    wa.settings.dev_user = ""
+    escalation = {**ESC, "plan": {"root_cause": "x", "remediation": {"manual": ["Mint a new key"]}}}
+    client.post("/api/sync", json={**BODY, "escalations": [escalation]}, headers=APIH)
+    iid = db.query(ChangeItem).one().id
+    assert "Mint a new key" in client.get(f"/items/{iid}", headers=SSO).text
