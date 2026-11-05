@@ -23,7 +23,7 @@ dependencies = [
 # ruff/pyright are pinned to the versions recorded in .code-standards.toml so
 # local == CI (the gate is version-sensitive: a newer linter can flag new rules).
 dev = [
-  "pytest>=8.0",
+  "pytest>=9.2.0",
   "httpx>=0.27",
   "ruff==0.17.2",
   "pyright==1.1.414",
