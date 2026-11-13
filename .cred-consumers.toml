@@ -133,7 +133,14 @@ rotated_by_sds = true
   repo = "orchestrator"
   ref = "scripts/run-membership-check.sh"
   healthchecks_check = "sds-membership-check"
-  note = "launchd com.devon.sds-membership-check 07:45 (fetched on every run, to read the landing policy's inert population for the member-record consistency check); Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-membership-check, an outcome alarm, so a reported disagreement also delays retiring an old value until the check is clean"
+  note = "two readers of this launcher, each fetching on every run to read the landing policy's inert population for the member-record consistency check: launchd com.devon.sds-membership-check 07:45 with Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account), and the sds-lane-membership-check container with the lane's own BWS token, each pass; Healthchecks check sds-membership-check, an outcome alarm, so a reported disagreement also delays retiring an old value until the check is clean"
+
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "orchestrator"
+  ref = "scripts/run-rotation-decomposer.sh"
+  healthchecks_check = "sds-rotation-decomposer"
+  note = "two readers of this launcher, each fetching on every run (dry run or not): launchd com.devon.rotation-decomposer hourly with Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account), and the sds-lane-rotation-decomposer container with the lane's own BWS token, each pass; Healthchecks check sds-rotation-decomposer, pinged on runs without --dry-run"
 
 [[credential]]
 id = "change-manager-propose-bearer"
@@ -175,7 +182,7 @@ rotated_by_sds = true
   repo = "orchestrator"
   ref = "scripts/run-change-proposer.sh"
   healthchecks_check = "sds-change-proposer"
-  note = "launchd com.devon.change-proposer hourly (--submit; fetched only by a writing run); Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-change-proposer"
+  note = "two readers of this launcher, each fetching only on a --submit (writing) pass: launchd com.devon.change-proposer hourly with Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account), and the sds-lane-change-proposer container with the lane's own BWS token; Healthchecks check sds-change-proposer, pinged on --submit passes only"
 
   [[credential.consumer]]
   kind = "runtime-fetch"
@@ -223,4 +230,4 @@ rotated_by_sds = true
   repo = "orchestrator"
   ref = "scripts/run-deploy-watcher.sh"
   healthchecks_check = "sds-deploy-watcher"
-  note = "launchd com.devon.deploy-watcher hourly; Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-deploy-watcher"
+  note = "two readers of this launcher: launchd com.devon.deploy-watcher hourly with Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account), and the sds-lane-deploy-watcher container with the lane's own BWS token, each pass; Healthchecks check sds-deploy-watcher"
