@@ -28,12 +28,14 @@ from app.deploy_policy import (
     _V5_LANDING,
     _V8_BRAIN_CRITERIA,
     _V9_LANDING,
+    _V14_LANDING,
+    _V14_REVERT_ROLLBACKS,
     DEPENDABOT,
     DOCKER,
     FORK_SECURE_UPSTREAM_SYNC,
     SEMVER_MINOR,
     SEMVER_PATCH,
-    V14,
+    V15,
     DeployPolicy,
     InertLanding,
     LandingConditions,
@@ -1235,6 +1237,81 @@ V13: Final = DeployPolicy(
 )
 
 
+# ---------------------------------------------------------------------------
+# Version 14 -- Devon, 2026-10-30.
+# ---------------------------------------------------------------------------
+
+# VERSION 13'S INERT POPULATION AND TERMS, unchanged: this version makes no statement about the
+# inert lane.
+_V14_INERT: Final = InertLanding(
+    repositories=frozenset(
+        {
+            "alobarquest/orchestrator",
+            "alobarquest/intent-packages",
+            "alobarquest/security-standards",
+            "alobarquest/infraops-mcp-server",
+            "alobarquest/project-standards",
+            "alobarquest/factory-runner",
+            # The two forks version 7 added. Both answer `landing: "inert"` in App Brain.
+            "alobarquest/rtk",
+            "alobarquest/claude-octopus",
+            # Added by version 11, 2026-10-19. A fork of morluto/rea, a tool installed on the
+            # operator's machine; it answers `landing: "inert"` in App Brain.
+            "alobarquest/rea",
+            # Added by version 12, 2026-10-21. Forks of EtienneLescot/n8n-as-code and
+            # EtienneLescot/n8n-manager, tools installed on the operator's machine; both answer
+            # `landing: "inert"` in App Brain.
+            "alobarquest/n8n-as-code",
+            "alobarquest/n8n-manager",
+            # Added by version 13, 2026-10-29. SDS test canary that proves the automatic revert of a
+            # bad inert landing.
+            "alobarquest/sds-canary",
+        }
+    ),
+    permitted_authors=frozenset({DEPENDABOT, FORK_SECURE_UPSTREAM_SYNC}),
+    excluded_ecosystems=frozenset({DOCKER}),
+    require_head_current_with_base=True,
+    non_ecosystem_authors=frozenset({FORK_SECURE_UPSTREAM_SYNC}),
+    rationale=(
+        "The rule ADR-0038 declared, over the 12 repositories version 13 named, with the same "
+        "authors. NOTHING IS ADDED OR WIDENED: the population, the authors, the excluded "
+        "ecosystems, the freshness condition and the exempted authors are version 13's. Version "
+        "14 changes only the deploying lane. The two populations remain disjoint."
+    ),
+)
+
+
+V14: Final = DeployPolicy(
+    version=14,
+    decided="2026-10-30",
+    rationale=(
+        "Version 13's populations and terms, with one change class added to the deploying lane: "
+        "dependency-revert, the SDS's own revert of a bump it landed and judged bad (orchestrator "
+        "Landing Part 3b). Such a record is approved by policy on the same repositories, risk and "
+        "acceptance criteria as any other -- the revert's merge runs the same rollout -- with a "
+        "remedy of its own (restore the bump) and conditions on the act of its own: no pace, no "
+        "change window, and the Dispatch App as the only author. Nothing else is widened: the same "
+        "deploying repositories, the same criteria, the same bump remedies, the same rollout pins, "
+        "the same conditions on a bump, and the same inert population and terms."
+    ),
+    repositories=frozenset({"alobarquest/change-manager", "alobarquest/brain"}),
+    change_classes=frozenset({"dependency-update", "factory-delivery", "dependency-revert"}),
+    risks=frozenset({"caution"}),
+    acceptance_criteria={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_CRITERIA,
+        "alobarquest/brain": _V8_BRAIN_CRITERIA,
+    },
+    rollback_plans={
+        "alobarquest/change-manager": _V1_CHANGE_MANAGER_ROLLBACK,
+        "alobarquest/brain": _V3_BRAIN_ROLLBACK,
+    },
+    class_rollback_plans={"dependency-revert": _V14_REVERT_ROLLBACKS},
+    # Version 9's terms on a bump, and the revert's conditions beside them.
+    landing=_V14_LANDING,
+    inert_landing=_V14_INERT,
+)
+
+
 # Every version ever, retained. A record stores the number that approved it, so an approval stays
 # re-evaluable after the policy has moved on.
 #
@@ -1256,6 +1333,7 @@ REGISTRY: Final[dict[int, DeployPolicy]] = {
         V12,
         V13,
         V14,
+        V15,
     )
 }
 
