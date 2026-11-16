@@ -62,7 +62,9 @@ def test_the_class_and_the_author_are_spelled_as_the_producer_and_github_spell_t
 def test_version_fourteen_admits_the_revert_class_and_changes_nothing_else():
     v13, v14 = policy_for(13), policy_for(14)
     assert v13 is not None and v14 is not None
-    assert v14 is current() and CURRENT_VERSION == 14
+    # NOT `v14 is current()`: which version is in force is asserted once, by
+    # `test_an_unknown_version_is_a_finding_rather_than_a_default`, so that a generated release
+    # (`scripts/release_inert_repository.py`) leaves every per-version claim true and untouched.
 
     # An EXACT union: `>=` would pass a version that admits every class.
     assert v14.change_classes == v13.change_classes | {DEPENDENCY_REVERT}
