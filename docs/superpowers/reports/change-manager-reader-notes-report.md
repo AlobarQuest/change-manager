@@ -71,8 +71,9 @@ was checked out, edited, or pulled.
   `rotation-proposer-bws-token`. The OBSERVE bearer `3b9503da-…` is in the reach of
   `deploy-watcher-bws-token`. Each row's comment says the lane keeps the Healthchecks check it
   pinged from the Mac (ADR-0059 decision 3), so each `healthchecks_check` value stays right.
-- `.bws-secrets.toml`: READ `lanes` and PROPOSE `lanes` agree with the reach lists above. OBSERVE
-  `lanes = ["deploy-watcher"]`.
+- `.bws-secrets.toml`: PROPOSE `lanes` matches the reach list in the preceding item, and OBSERVE
+  `lanes = ["deploy-watcher"]`. READ `lanes` holds the four READ lanes plus estate-landing,
+  inert-landing, and bump-driver (concern 2).
 - `scripts/run-<lane>.sh` headers: the fetch conditions in the existing notes still hold (READ on
   every bump-proposer pass, PROPOSE only on `--submit`, the decomposer's READ on every pass).
 - On this Mac, `launchctl print-disabled` and `launchctl list`: of the twelve moved jobs, I checked all
