@@ -1,6 +1,6 @@
 # Machine bearer settings
 
-change-manager authenticates four machine bearers, one per scope. Each Coolify variable holds the
+change-manager authenticates five machine bearers, one per scope. Each Coolify variable holds the
 bearer's sha256 hash, never the bearer (ADR-0055 decision 7, amendment 9 decision 6, in the
 orchestrator repository). `app/bearers.py` holds the rules, and
 `tests/fixtures/m2m_bearer_setting.json` pins them with the orchestrator.
@@ -11,6 +11,7 @@ orchestrator repository). `app/bearers.py` holds the rules, and
 | `M2M_TOKEN_READ` | `read` |
 | `M2M_TOKEN_PROPOSE` | `propose` |
 | `M2M_TOKEN_OBSERVE` | `observe` |
+| `M2M_TOKEN_EXECUTE` | `execute` |
 
 ## The value
 

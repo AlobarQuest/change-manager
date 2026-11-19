@@ -1,7 +1,7 @@
 """Each machine bearer's setting: its sha256 hash and, during a rotation, the previous one.
 
 ADR-0055 decision 7 and amendment 9, decision 6. A rotation keeps a bearer's old value valid
-beside its new one until every consumer has switched, so each of the four variables holds one
+beside its new one until every consumer has switched, so each of the five variables holds one
 JSON object in the orchestrator's `ORCHESTRATOR_M2M_CREDENTIALS` entry form, keyed by the scope:
 
     {"read": {"token_hash": "<sha256>", "previous": {"token_hash": "<sha256>", "until": "<UTC>"}}}
@@ -40,7 +40,7 @@ from datetime import datetime, timedelta
 from typing import Any, Final
 
 from app.config import Settings
-from app.scopes import FULL, OBSERVE, PROPOSE, READ
+from app.scopes import EXECUTE, FULL, OBSERVE, PROPOSE, READ
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +48,13 @@ HASH: Final = re.compile(r"[0-9a-f]{64}")
 MAX_PREVIOUS_OVERLAP: Final = timedelta(days=8)
 
 # Settings field, scope, and the variable an operator reads in Coolify. Narrow scopes come FIRST,
-# so a value configured for two scopes resolves to the narrower one.
+# so a value configured for two scopes resolves to the narrower one. `execute` is last of the
+# narrow ones because it is the only one that reaches caller-chosen status routes (`app/scopes.py`).
 VARIABLES: Final = (
     ("m2m_token_read", READ, "M2M_TOKEN_READ"),
     ("m2m_token_propose", PROPOSE, "M2M_TOKEN_PROPOSE"),
     ("m2m_token_observe", OBSERVE, "M2M_TOKEN_OBSERVE"),
+    ("m2m_token_execute", EXECUTE, "M2M_TOKEN_EXECUTE"),
     ("m2m_token", FULL, "M2M_TOKEN"),
 )
 
