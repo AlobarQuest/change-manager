@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     m2m_token_read: str = ""
     m2m_token_propose: str = ""
     m2m_token_observe: str = ""
+    # The change window's bearer (D-68 B, ADR-0059 increment 8): read, claim, outcome, window runs.
+    m2m_token_execute: str = ""
     sso_user_header: str = "x-authentik-email"  # forward-auth header Authentik sets
     dev_user: str = ""  # local-dev fallback identity when no SSO header (empty = disabled)
     # HANDOFF_WATCHDOG_DAYS: revert stale handed_off items to pending
