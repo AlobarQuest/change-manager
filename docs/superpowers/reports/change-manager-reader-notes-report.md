@@ -75,10 +75,14 @@ was checked out, edited, or pulled.
   `lanes = ["deploy-watcher"]`.
 - `scripts/run-<lane>.sh` headers: the fetch conditions in the existing notes still hold (READ on
   every bump-proposer pass, PROPOSE only on `--submit`, the decomposer's READ on every pass).
-- On this Mac, `launchctl print-disabled` shows every moved job disabled, and `launchctl list` has
-  none of them loaded. `com.devon.estate-landing` is still loaded.
+- On this Mac, `launchctl print-disabled` and `launchctl list`: of the twelve moved jobs, I checked all
+  twelve: execution-watch, landing-ledger,
+  deploy-watcher, revision-watcher, unit-verifier, pin-watcher, sds-membership-check,
+  change-proposer, rotation-decomposer, work-carrier, bump-proposer, and rotation-proposer. Each
+  is disabled and not loaded. Of the jobs that aren't moved, estate-landing, inert-landing,
+  bump-driver, and change-window are loaded. I didn't check factory-events.
 
-The handoff's facts agree with these sources, with one addition in the following section.
+The handoff's facts agree with these sources, except for the points under Concerns.
 
 ## Rows checked and left alone
 
@@ -95,6 +99,8 @@ The handoff's facts agree with these sources, with one addition in the following
 - Parsed both versions of `.cred-consumers.toml` with `tomllib`: 23 consumers before and after.
   With every `note` removed, the two parses are equal, so no other field, consumer, or order
   changed.
+- `/code-review`: skipped. The diff changes nine TOML string values and no code, and the parse
+  comparison in the preceding item covers the risk that matters (another field changing).
 - Security scanner (`security_scan.cli . --category security`, repo root): one INFO finding and no
   BLOCK or WARN.
 
@@ -108,7 +114,11 @@ The handoff's facts agree with these sources, with one addition in the following
 `note` isn't an identity field. The orchestrator rotation worker keys `runtime-fetch` on
 `repo` and `ref` (`IDENTITY_FIELDS`, from the earlier W-139 report). The infraops reader
 (`src/security-drift/cred-consumers.ts`) treats `note` as an optional string. No test or parser in
-this repository reads the file. So the change needed nothing beyond the notes, and I didn't stop at
+this repository reads the file. I also checked the orchestrator rotation worker at `0f59f4f6`
+(`git grep -w note -- src/rotation_worker/`): `destinations.py` says `note` "is not identity and
+never appears", `readers.py` keeps it out of the destination string, and `CLAUDE.md` says a
+scheduled reader is verified by `healthchecks_check` beside `note`. No code there parses note text,
+and every `healthchecks_check` value is unchanged. So the change needed nothing beyond the notes, and I didn't stop at
 the question point. The notes use one shape, so a reader can compare them.
 
 ## Concerns
@@ -120,10 +130,16 @@ the question point. The notes use one shape, so a reader can compare them.
    `scripts/replay_deploy_signal.py`. The handoff forbids adding consumers, so I left them out. A
    revoke decided from this registry alone would miss them. HQ needs to decide whether they get
    rows.
-2. **Lanes that are built but not cut over.** READ `lanes` also lists `estate-landing`,
-   `inert-landing`, and `bump-driver`. Those Mac jobs still run, and I left their notes alone, as
-   the handoff says. When those lanes move, their notes need the same rewrite.
-3. The handoff's Standards section covers everything this change touches.
+2. **Sources disagree on estate-landing, inert-landing, and bump-driver; I didn't resolve it.**
+   At `0f59f4f6`, the orchestrator `.bws-secrets.toml` lists these three in READ `lanes`, and its
+   comment says each reads READ "in its lane's container too" (ADR-0059 steps 3g-1 to 3g-3).
+   But no lane token row in its `.cred-consumers.toml` has `314f276d-…` in `reach_secrets` for
+   them; only the four rows the handoff names do. The handoff says they aren't moved, and their
+   Mac jobs are loaded here. I left the estate-landing and inert-landing notes alone, as the
+   handoff says.
+3. **No bump-driver row exists to leave alone.** The handoff lists bump-driver among the notes to
+   keep, but this file has no `run-bump-driver.sh` consumer on any bearer (see concern 1).
+4. The handoff's Standards section covers everything this change touches.
 
 ## Standards followed
 
