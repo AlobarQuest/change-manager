@@ -58,10 +58,10 @@ def test_the_executor_cannot_claim_a_deploy_change(db, client, m2m, deploy_paylo
 def test_the_executor_cannot_post_an_outcome_on_a_deploy_change(db, client, m2m, deploy_payload):
     """The third call, which `claim` alone does not cover.
 
-    `outcome` has no status precondition, so guarding only `claim` leaves it reachable
-    on an unclaimed item — writing a ChangeAttempt and an `attempt_done` event that
-    say an agent applied a deploy nothing performed, into a chain built to be
-    tamper-evident.
+    `outcome` also requires `in_progress`, but that check is not this guard: a deploy
+    change must be refused by name, whatever its status. Without it, an outcome writes a
+    ChangeAttempt and an `attempt_done` event that say an agent applied a deploy nothing
+    performed, into a chain built to be tamper-evident.
     """
     item, _ = propose_deploy_change(db, DeployChangeIn(**deploy_payload()))
     for outcome in ("done", "failed", "blocked", "skipped_conformant"):
