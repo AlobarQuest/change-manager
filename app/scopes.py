@@ -21,6 +21,11 @@ this surface has no such property, so the analogy is followed in structure and n
 **`read` is an enumerated list, not "every GET".** Two GET routes are deliberately outside it:
 `/api/items/{item_id}/handoff` serves handoff briefs, which are instructions written for an agent
 holding production infrastructure tools, and no narrow consumer needs them.
+
+**`execute` is the one narrow scope that reaches caller-chosen status routes**, and only the two
+the change window needs: claim and outcome (D-68 B, ADR-0059 increment 8). What every narrow scope
+still can't reach is a DECISION route, `POST /api/sync`, or `POST .../handoff`; the comments on
+`SCOPE_ROUTES` and `CALLER_CHOSEN_STATUS_ROUTES` carry the argument.
 """
 
 from typing import Final
@@ -29,6 +34,7 @@ FULL: Final = "full"
 READ: Final = "read"
 PROPOSE: Final = "propose"
 OBSERVE: Final = "observe"
+EXECUTE: Final = "execute"
 
 # Reading a change record. Held by the orchestrator's admission term (ADR-0019 increment 3) and,
 # with one write added below, by the rollout watcher (increment 2).
@@ -52,10 +58,21 @@ _READ_ROUTES: Final = frozenset(
     }
 )
 
-# The scopes a narrow credential may hold. Each is READ plus the writes named below, and no write
-# here lets the CALLER CHOOSE a record's status: the DECISION lifecycle
-# (approve/defer/wontfix/resolve/reactivate) and the EXECUTION one (claim/outcome/handoff) are
-# both out of reach. That is the whole point of the file.
+# The scopes a narrow credential may hold. Each is READ plus the writes named below. No write here
+# reaches the DECISION lifecycle (`DECISION_ROUTES`), `POST /api/sync`, or `POST .../handoff`, and
+# the only caller-chosen status routes any of them reaches are `execute`'s claim and outcome. That
+# is the whole point of the file.
+#
+# CORRECTED BY D-68 B (ADR-0059 INCREMENT 8, SDS HQ STEP 3J). This used to say that no write here
+# lets the caller choose a record's status, with the EXECUTION lifecycle (claim/outcome/handoff)
+# out of reach as a whole. The change window moving to a VPS lane made that false on purpose: its
+# job held the full bearer, which can approve, and the standing answer is that every lane
+# credential is single-purpose and narrowest-scope. Its narrowest scope has to claim an approved
+# record and post what happened, and both routes take their resulting status from the caller.
+# What it still cannot do is decide: a record reaches `approved` only through a decision route, a
+# policy, or a human, and `claim` refuses anything else (`app/api.py` `claim`). So the property is
+# restated in row terms, as sets a test can intersect, rather than kept as a sentence one scope
+# now breaks.
 #
 # CORRECTED BY ADR-0019 INCREMENT 5a. This used to say no write here "touches the DECISION
 # lifecycle", and that became false the moment the proposal ingress started running the deploy
@@ -97,9 +114,41 @@ SCOPE_ROUTES: Final[dict[str, frozenset[tuple[str, str]]]] = {
         # argument. Not in `propose`: that scope's producer sees pull requests, not rollouts.
         ("POST", "/api/items/{item_id}/deploy-supersession"),
     },
+    # D-68 B, ADR-0059 increment 8. The change window's calls, and nothing else: list what is
+    # approved, claim one, post its outcome, and keep the window's own run record. `POST /api/sync`
+    # is the drift sync's and stays out, as does every decision route and the handoff write.
+    EXECUTE: _READ_ROUTES
+    | {
+        ("POST", "/api/items/{item_id}/claim"),
+        ("POST", "/api/items/{item_id}/outcome"),
+        ("POST", "/api/window-runs"),
+        ("PATCH", "/api/window-runs/{window_id}"),
+    },
 }
 
 NARROW_SCOPES: Final = tuple(SCOPE_ROUTES)
+
+# Deciding what happens to a change record. No narrow scope reaches any of these: approval is a
+# human's or a pinned policy's, never a machine credential's.
+DECISION_ROUTES: Final = frozenset(
+    {
+        ("POST", "/api/items/{item_id}/approve"),
+        ("POST", "/api/items/{item_id}/defer"),
+        ("POST", "/api/items/{item_id}/wontfix"),
+        ("POST", "/api/items/{item_id}/resolve"),
+        ("POST", "/api/items/{item_id}/reactivate"),
+    }
+)
+
+# The caller-chosen routes `execute` exists to reach (D-68 B): the change window claims an approved
+# record and posts its outcome. These two, and no other caller-chosen route, are open to a narrow
+# scope.
+EXECUTION_ROUTES: Final = frozenset(
+    {
+        ("POST", "/api/items/{item_id}/claim"),
+        ("POST", "/api/items/{item_id}/outcome"),
+    }
+)
 
 # Routes by which a change record's status can move, or by which an executor can assert it acted.
 # Named here as data so a test can state the property in ROW terms rather than trusting that a
@@ -149,8 +198,14 @@ STATUS_MOVING_ROUTES: Final = frozenset(
     }
 )
 
-# The narrower property that is still TRUE of every narrow credential, and the one worth
-# guarding: none of them can CHOOSE a record's status.
+# The routes that take a record's resulting status from the caller. Until D-68 B no narrow
+# credential reached any of them; `execute` now reaches exactly `EXECUTION_ROUTES`, and every other
+# member (the decision routes, the drift sync, the handoff write) stays the full credential's.
+#
+# CORRECTED BY D-68 B (ADR-0059 INCREMENT 8). This paragraph used to call "none of them can CHOOSE
+# a record's status" the property still true of every narrow credential. It is still true of
+# `read`, `propose`, and `observe`, and false of `execute` by design; the module-level comment on
+# `SCOPE_ROUTES` records why, and the tests state both halves as sets.
 #
 # The distinction is the whole of ADR-0019 increment 5a. A `propose` credential can cause a
 # status to move, because proposing a record whose shape conforms to a pinned policy is what

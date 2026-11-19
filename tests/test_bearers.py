@@ -13,7 +13,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import pytest
 from fastapi.testclient import TestClient
@@ -47,10 +47,30 @@ def test_the_fixture_is_unchanged() -> None:
     assert hashlib.sha256(FIXTURE.read_bytes()).hexdigest() == CONTRACT_SHA256
 
 
+# Variables this service reads that the shared fixture doesn't list yet. D-68 B (ADR-0059
+# increment 8, SDS HQ step 3j) added the change window's `execute` bearer here first. The exception
+# goes away in the orchestrator PR that adds the execute row to its rotation worker's VARIABLES
+# together with the paired fixture change, which updates the fixture and CONTRACT_SHA256 on both
+# sides.
+NOT_YET_IN_CONTRACT: Final = frozenset({"M2M_TOKEN_EXECUTE"})
+
+
 def test_the_variables_and_the_overlap_bound_are_this_services() -> None:
     fixture = _fixture()
-    assert fixture["variables"] == {variable: scope for _, scope, variable in bearers.VARIABLES}
+    ours = {variable: scope for _, scope, variable in bearers.VARIABLES}
+    contracted = {v: s for v, s in ours.items() if v not in NOT_YET_IN_CONTRACT}
+    assert fixture["variables"] == contracted
     assert fixture["max_previous_overlap_seconds"] == (bearers.MAX_PREVIOUS_OVERLAP.total_seconds())
+
+
+def test_the_variables_outside_the_contract_are_exactly_the_execute_bearer() -> None:
+    """The exception is named and can't grow, and every fixture variable is still one of ours."""
+    assert NOT_YET_IN_CONTRACT == {"M2M_TOKEN_EXECUTE"}
+    ours = {variable: scope for _, scope, variable in bearers.VARIABLES}
+    assert NOT_YET_IN_CONTRACT <= set(ours)
+    assert NOT_YET_IN_CONTRACT.isdisjoint(_fixture()["variables"])
+    for variable, scope in _fixture()["variables"].items():
+        assert ours.get(variable) == scope, variable
 
 
 @pytest.mark.parametrize(
@@ -290,3 +310,48 @@ def test_an_unset_variable_is_not_a_parse_error(caplog) -> None:
     with caplog.at_level(logging.ERROR, logger="app.bearers"):
         assert [bearer.scope for bearer in bearers.configured(settings)] == ["full"]
     assert caplog.records == []
+
+
+# --- the execute bearer (D-68 B, ADR-0059 increment 8) ---------------------------------------
+
+
+def test_the_app_boots_with_the_execute_variable_unset() -> None:
+    """Nothing reads `execute` until the lane's cut-over, so every deployment starts without it."""
+    result = _boot(M2M_TOKEN=hashed("full", "f"), M2M_TOKEN_READ=hashed("read", "r"))
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("value", ["", "{"], ids=["unset", "does not parse"])
+def test_an_unset_or_malformed_execute_variable_grants_no_bearer_execute(value: str) -> None:
+    """Empty is silent and malformed is logged; either way no bearer is `execute`, the empty one
+    included, and the other scopes keep working."""
+    settings = _settings(m2m_token_execute=value, m2m_token=hashed("full", "f"))
+    assert [bearer.scope for bearer in bearers.configured(settings)] == ["full"]
+    now = datetime.now(UTC)
+    for presented in ("", "t", "{"):
+        assert bearers.scope_for(presented, settings, now) is None
+    assert bearers.scope_for("f", settings, now) == "full"
+
+
+def test_a_malformed_execute_variable_does_not_stop_boot() -> None:
+    result = _boot(M2M_TOKEN_EXECUTE="{", M2M_TOKEN=hashed("full", "f"))
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    ("other", "field", "expected"),
+    [
+        ("read", "m2m_token_read", "read"),
+        ("propose", "m2m_token_propose", "propose"),
+        ("observe", "m2m_token_observe", "observe"),
+        ("full", "m2m_token", "execute"),
+    ],
+)
+def test_a_value_shared_with_execute_resolves_by_the_narrow_first_order(
+    other: str, field: str, expected: str
+) -> None:
+    """`execute` is the last narrow scope: the only one reaching caller-chosen status routes."""
+    settings = _settings(
+        m2m_token_execute=hashed("execute", "same"), **{field: hashed(other, "same")}
+    )
+    assert bearers.scope_for("same", settings, datetime.now(UTC)) == expected

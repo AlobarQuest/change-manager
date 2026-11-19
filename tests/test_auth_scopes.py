@@ -19,6 +19,9 @@ from app import bearers
 from app.main import app
 from app.scopes import (
     CALLER_CHOSEN_STATUS_ROUTES,
+    DECISION_ROUTES,
+    EXECUTE,
+    EXECUTION_ROUTES,
     NARROW_SCOPES,
     OBSERVE,
     PROPOSE,
@@ -28,12 +31,24 @@ from app.scopes import (
 from tests.bearer_settings import hashed
 
 FULL_TOKEN = "full-tok"
-TOKENS = {"read": "read-tok", "propose": "propose-tok", "observe": "observe-tok"}
+TOKENS = {
+    "read": "read-tok",
+    "propose": "propose-tok",
+    "observe": "observe-tok",
+    "execute": "execute-tok",
+}
+
+# Caller-chosen routes no narrow scope reaches, `execute` included (D-68 B): every decision, the
+# drift sync, and the handoff write.
+FULL_ONLY_CALLER_CHOSEN = DECISION_ROUTES | {
+    ("POST", "/api/sync"),
+    ("POST", "/api/items/{item_id}/handoff"),
+}
 
 
 @pytest.fixture()
 def scoped() -> Iterator[None]:
-    """Configure all four credentials, and put every one of them back afterwards."""
+    """Configure all five credentials, and put every one of them back afterwards."""
     import app.auth as auth
 
     before = (
@@ -41,17 +56,20 @@ def scoped() -> Iterator[None]:
         auth.settings.m2m_token_read,
         auth.settings.m2m_token_propose,
         auth.settings.m2m_token_observe,
+        auth.settings.m2m_token_execute,
     )
     auth.settings.m2m_token = hashed("full", FULL_TOKEN)
     auth.settings.m2m_token_read = hashed("read", TOKENS["read"])
     auth.settings.m2m_token_propose = hashed("propose", TOKENS["propose"])
     auth.settings.m2m_token_observe = hashed("observe", TOKENS["observe"])
+    auth.settings.m2m_token_execute = hashed("execute", TOKENS["execute"])
     yield
     (
         auth.settings.m2m_token,
         auth.settings.m2m_token_read,
         auth.settings.m2m_token_propose,
         auth.settings.m2m_token_observe,
+        auth.settings.m2m_token_execute,
     ) = before
 
 
@@ -85,8 +103,8 @@ def _api_routes() -> list[tuple[str, str]]:
 # --- the property, stated the two ways that matter -------------------------------------------
 
 
-@pytest.mark.parametrize("scope", NARROW_SCOPES)
-def test_no_narrow_scope_can_choose_a_change_records_status(scope: str) -> None:
+@pytest.mark.parametrize("scope", [scope for scope in NARROW_SCOPES if scope != EXECUTE])
+def test_no_narrow_scope_but_execute_can_choose_a_change_records_status(scope: str) -> None:
     """Stated in ROW terms, not route terms.
 
     Increment 1's kill was a guard keyed on the right concept and the wrong field. The route list
@@ -99,10 +117,51 @@ def test_no_narrow_scope_can_choose_a_change_records_status(scope: str) -> None:
     record into `approved`. Stage-two review found the module docstring and the exclusion comment
     still asserting the old sentence; the test's own name and docstring were asserting it too, one
     file over from the finding. A name is a claim.
+
+    RENAMED BY D-68 B (ADR-0059 INCREMENT 8), for the same reason. `execute` reaches claim and
+    outcome by design, so the old name became false for it. The property is kept for the three
+    scopes it is still true of, and the two tests that follow state what holds for all four: no
+    narrow scope reaches a decision, the drift sync, or the handoff write, and the only
+    caller-chosen routes any of them reaches are exactly `EXECUTION_ROUTES`.
     """
     assert not (SCOPE_ROUTES[scope] & CALLER_CHOSEN_STATUS_ROUTES), (
         f"the '{scope}' scope reaches {sorted(SCOPE_ROUTES[scope] & CALLER_CHOSEN_STATUS_ROUTES)}"
     )
+
+
+@pytest.mark.parametrize("scope", NARROW_SCOPES)
+def test_no_narrow_scope_reaches_a_decision_the_sync_or_the_handoff_write(scope: str) -> None:
+    """D-68 B. The property that survives `execute`, in row terms, for every narrow scope."""
+    assert not (SCOPE_ROUTES[scope] & FULL_ONLY_CALLER_CHOSEN), (
+        f"the '{scope}' scope reaches {sorted(SCOPE_ROUTES[scope] & FULL_ONLY_CALLER_CHOSEN)}"
+    )
+
+
+def test_the_only_caller_chosen_routes_a_narrow_scope_reaches_are_executes_claim_and_outcome() -> (
+    None
+):
+    """D-68 B. The exception is exactly two routes, and only `execute` holds them."""
+    reached = {
+        scope: SCOPE_ROUTES[scope] & CALLER_CHOSEN_STATUS_ROUTES
+        for scope in NARROW_SCOPES
+        if SCOPE_ROUTES[scope] & CALLER_CHOSEN_STATUS_ROUTES
+    }
+    assert reached == {EXECUTE: EXECUTION_ROUTES}
+    assert EXECUTION_ROUTES == {
+        ("POST", "/api/items/{item_id}/claim"),
+        ("POST", "/api/items/{item_id}/outcome"),
+    }
+
+
+def test_the_caller_chosen_routes_are_decisions_execution_sync_and_handoff() -> None:
+    """Pins `DECISION_ROUTES` and `EXECUTION_ROUTES` against the set they partition.
+
+    Without it, emptying `DECISION_ROUTES` would leave the decision test above green while it
+    protected nothing -- the failure this module records twice already for derived sets.
+    """
+    assert CALLER_CHOSEN_STATUS_ROUTES == FULL_ONLY_CALLER_CHOSEN | EXECUTION_ROUTES
+    assert not (FULL_ONLY_CALLER_CHOSEN & EXECUTION_ROUTES)
+    assert len(DECISION_ROUTES) == 5
 
 
 @pytest.mark.parametrize("scope", NARROW_SCOPES)
@@ -149,6 +208,8 @@ def test_the_status_moving_routes_a_narrow_scope_reaches_are_named_and_bounded(s
             ("POST", "/api/items/{item_id}/deploy-observation"),
             ("POST", "/api/items/{item_id}/deploy-supersession"),
         },
+        # D-68 B. The change window's claim and outcome; its window-run writes move no status.
+        EXECUTE: set(EXECUTION_ROUTES),
     }.get(scope, set())
     assert reached == expected, f"the '{scope}' scope reaches {sorted(reached)}"
 
@@ -253,6 +314,11 @@ def test_no_narrow_scope_reaches_any_write_except_the_four_they_exist_for() -> N
         # ADR-0029. The work source's retirement, reachable by `propose` for the same three
         # reasons the deploying-merge one is.
         ("POST", "/api/items/{item_id}/work-retirement"),
+        # D-68 B, ADR-0059 increment 8. The change window's writes, reachable by `execute`.
+        ("POST", "/api/items/{item_id}/claim"),
+        ("POST", "/api/items/{item_id}/outcome"),
+        ("POST", "/api/window-runs"),
+        ("PATCH", "/api/window-runs/{window_id}"),
     }
 
 
@@ -268,7 +334,7 @@ def test_the_propose_credential_cannot_approve(client: TestClient, scoped: None)
     assert "propose" in response.json()["detail"]
 
 
-@pytest.mark.parametrize("scope", ["read", "propose", "observe"])
+@pytest.mark.parametrize("scope", ["read", "propose", "observe", "execute"])
 def test_no_narrow_credential_can_approve_over_http(
     client: TestClient, scoped: None, scope: str
 ) -> None:
@@ -394,11 +460,13 @@ def test_an_unset_scope_secret_grants_nothing(client: TestClient) -> None:
         auth.settings.m2m_token_read,
         auth.settings.m2m_token_propose,
         auth.settings.m2m_token_observe,
+        auth.settings.m2m_token_execute,
     )
     auth.settings.m2m_token = hashed("full", FULL_TOKEN)
     auth.settings.m2m_token_read = ""
     auth.settings.m2m_token_propose = ""
     auth.settings.m2m_token_observe = ""
+    auth.settings.m2m_token_execute = ""
     try:
         assert [bearer.scope for bearer in bearers.configured(auth.settings)] == ["full"]
 
@@ -411,6 +479,7 @@ def test_an_unset_scope_secret_grants_nothing(client: TestClient) -> None:
             auth.settings.m2m_token_read,
             auth.settings.m2m_token_propose,
             auth.settings.m2m_token_observe,
+            auth.settings.m2m_token_execute,
         ) = before
 
 
@@ -671,3 +740,99 @@ def test_the_observe_credential_reaches_the_supersession_and_propose_does_not(
         assert client.post(path, json=body, headers=_bearer(TOKENS[scope])).status_code == 403
     assert ("POST", "/api/items/{item_id}/deploy-supersession") not in SCOPE_ROUTES[PROPOSE]
     assert ("POST", "/api/items/{item_id}/deploy-retirement") not in SCOPE_ROUTES[OBSERVE]
+
+
+# --- the execute credential (D-68 B, ADR-0059 increment 8) ------------------------------------
+
+_DRIFT_ESCALATION = {
+    "generated_at": "t",
+    "source_report": "2026-06-14.json",
+    "escalations": [
+        {
+            "proposal_id": "571:r1",
+            "instance": "prod",
+            "target": {
+                "provider": "coolify",
+                "resource_type": "application",
+                "uuid": "a1",
+                "name": "app1",
+            },
+            "risk": "caution",
+            "kind": "remediation",
+            "reasoning": "rule #571",
+            "plan": {"root_cause": "x"},
+            "note": None,
+        }
+    ],
+}
+
+
+def test_the_execute_credential_reaches_each_of_the_windows_five_calls(
+    client: TestClient, scoped: None, db
+) -> None:
+    """The change window's calls (infraops `api-client.ts`), each actually served.
+
+    The subject is built with the full credential, the way the drift sync and a human build it,
+    and the execute credential then runs one window over it.
+    """
+    full, execute = _bearer(FULL_TOKEN), _bearer(TOKENS["execute"])
+    assert client.post("/api/sync", json=_DRIFT_ESCALATION, headers=full).status_code == 200
+    item = client.get("/api/items", headers=full).json()[0]
+    approved = client.post(
+        f"/api/items/{item['id']}/approve", json={"actor": "devon"}, headers=full
+    )
+    assert approved.status_code == 200, approved.text
+
+    listed = client.get("/api/items", params={"status": "approved"}, headers=execute)
+    assert listed.status_code == 200
+    assert [row["id"] for row in listed.json()] == [item["id"]]
+    window = client.post(
+        "/api/window-runs", json={"started_at": "2026-11-18T03:00:00Z"}, headers=execute
+    )
+    assert window.status_code == 200
+    claimed = client.post(f"/api/items/{item['id']}/claim", json={"actor": "w"}, headers=execute)
+    assert claimed.status_code == 200
+    assert claimed.json()["status"] == "in_progress"
+    posted = client.post(
+        f"/api/items/{item['id']}/outcome",
+        json={"outcome": "done", "detail": "applied", "actor": "w"},
+        headers=execute,
+    )
+    assert posted.status_code == 200
+    assert posted.json()["status"] == "done"
+    patched = client.patch(
+        f"/api/window-runs/{window.json()['id']}",
+        json={"status": "done", "considered": 1, "applied": 1},
+        headers=execute,
+    )
+    assert patched.status_code == 200
+    assert patched.json()["status"] == "done"
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("POST", "/api/items/1/approve"),
+        ("POST", "/api/items/1/defer"),
+        ("POST", "/api/items/1/wontfix"),
+        ("POST", "/api/items/1/resolve"),
+        ("POST", "/api/items/1/reactivate"),
+        ("POST", "/api/items/1/handoff"),
+        ("GET", "/api/items/1/handoff"),
+        ("POST", "/api/sync"),
+        ("POST", "/api/deploy-changes"),
+        ("POST", "/api/work-changes"),
+        ("POST", "/api/items/1/deploy-retirement"),
+        ("POST", "/api/items/1/work-retirement"),
+        ("POST", "/api/items/1/deploy-observation"),
+        ("POST", "/api/items/1/deploy-supersession"),
+        ("PATCH", "/api/items/1"),
+    ],
+)
+def test_the_execute_credential_is_refused_everything_else_with_403(
+    client: TestClient, scoped: None, method: str, path: str
+) -> None:
+    """403, not 401: the bearer is recognised, and the scope table says no."""
+    response = client.request(method, path, json={}, headers=_bearer(TOKENS["execute"]))
+    assert response.status_code == 403, response.text
+    assert "execute" in response.json()["detail"]
