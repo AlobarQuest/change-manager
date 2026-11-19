@@ -1,4 +1,7 @@
+import pytest
+
 import app.auth as auth
+from app.api import _OUTCOME_STATUS
 from app.models import ChangeAttempt, ChangeEvent, ChangeItem
 from tests.bearer_settings import hashed
 
@@ -53,3 +56,56 @@ def test_outcome_blocked_sets_blocked(client, db):
         f"/api/items/{iid}/outcome", headers=H, json={"outcome": "blocked", "detail": "no S3"}
     )
     assert db.get(ChangeItem, iid).status == "blocked"
+
+
+# Every status an item can hold except `in_progress`, the one a claim produces.
+_UNCLAIMED_STATUSES = [
+    "pending",
+    "approved",
+    "wontfix",
+    "deferred",
+    "done",
+    "failed",
+    "blocked",
+    "resolved",
+    "handed_off",
+]
+
+
+@pytest.mark.parametrize("outcome", sorted(_OUTCOME_STATUS))
+@pytest.mark.parametrize("status", _UNCLAIMED_STATUSES)
+def test_outcome_refuses_an_item_that_is_not_in_progress(client, db, status, outcome):
+    """An outcome reports on a claimed change, so it cannot close a `wontfix` record as
+    `resolved` or write an `attempt_done` for a change nothing claimed."""
+    iid = _approved(client, db)
+    it = db.get(ChangeItem, iid)
+    it.status = status
+    db.commit()
+    events_before = db.query(ChangeEvent).filter_by(item_id=iid).count()
+
+    r = client.post(
+        f"/api/items/{iid}/outcome", headers=H, json={"outcome": outcome, "detail": "x"}
+    )
+
+    assert r.status_code == 409
+    assert r.json()["detail"] == f"not in progress (status={status})"
+    db.refresh(it)
+    assert it.status == status
+    assert db.query(ChangeAttempt).filter_by(item_id=iid).count() == 0
+    assert db.query(ChangeEvent).filter_by(item_id=iid).count() == events_before
+
+
+@pytest.mark.parametrize(("outcome", "expected"), sorted(_OUTCOME_STATUS.items()))
+def test_outcome_after_a_claim_moves_to_the_outcomes_status(client, db, outcome, expected):
+    new_status, event_type = expected
+    iid = _approved(client, db)
+    assert client.post(f"/api/items/{iid}/claim", headers=H).status_code == 200
+
+    r = client.post(
+        f"/api/items/{iid}/outcome", headers=H, json={"outcome": outcome, "detail": "x"}
+    )
+
+    assert r.status_code == 200
+    assert db.get(ChangeItem, iid).status == new_status
+    assert db.query(ChangeAttempt).filter_by(item_id=iid).count() == 1
+    assert db.query(ChangeEvent).filter_by(item_id=iid, event_type=event_type).count() == 1

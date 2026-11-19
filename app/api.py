@@ -523,6 +523,11 @@ def outcome(item_id: int, body: OutcomeIn, db: Session = Depends(get_db)) -> dic
     if it is None:
         raise HTTPException(status_code=404, detail="not found")
     require_executor(it)
+    # An outcome reports on a claimed change. Without this, any executing bearer could close a
+    # `wontfix` or `deferred` record as `resolved`, or write an `attempt_done` for a change
+    # nothing claimed -- and that event ships to the tamper-evident chain.
+    if it.status != "in_progress":
+        raise HTTPException(status_code=409, detail=f"not in progress (status={it.status})")
     if body.outcome not in _OUTCOME_STATUS:
         raise HTTPException(status_code=422, detail=f"unknown outcome {body.outcome}")
     new_status, event_type = _OUTCOME_STATUS[body.outcome]
