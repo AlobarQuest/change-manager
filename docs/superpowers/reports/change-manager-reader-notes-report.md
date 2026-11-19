@@ -11,7 +11,7 @@ variable, and its Healthchecks check. Where a note named both the Mac job and th
 ("two readers of this launcher"), the note now names only the container. Each note keeps its
 fetch condition (every run, writing run only, registering run only) and any outcome-alarm wording.
 
-Branch `hq/reader-notes-moved-lanes`, PR: PR_URL_PLACEHOLDER
+Branch `hq/reader-notes-moved-lanes`, PR: https://github.com/AlobarQuest/change-manager/pull/170
 
 ## Notes changed
 
