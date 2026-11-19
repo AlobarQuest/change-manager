@@ -333,6 +333,13 @@ def test_an_unset_or_malformed_execute_variable_grants_no_bearer_execute(value: 
     assert bearers.scope_for("f", settings, now) == "full"
 
 
+def test_a_malformed_execute_variable_is_logged(caplog) -> None:
+    settings = _settings(m2m_token_execute="{", m2m_token=hashed("full", "f"))
+    with caplog.at_level(logging.ERROR, logger="app.bearers"):
+        bearers.configured(settings)
+    assert "M2M_TOKEN_EXECUTE doesn't parse" in caplog.text
+
+
 def test_a_malformed_execute_variable_does_not_stop_boot() -> None:
     result = _boot(M2M_TOKEN_EXECUTE="{", M2M_TOKEN=hashed("full", "f"))
     assert result.returncode == 0, result.stderr

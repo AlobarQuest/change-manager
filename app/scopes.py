@@ -69,10 +69,12 @@ _READ_ROUTES: Final = frozenset(
 # job held the full bearer, which can approve, and the standing answer is that every lane
 # credential is single-purpose and narrowest-scope. Its narrowest scope has to claim an approved
 # record and post what happened, and both routes take their resulting status from the caller.
-# What it still cannot do is decide: a record reaches `approved` only through a decision route, a
-# policy, or a human, and `claim` refuses anything else (`app/api.py` `claim`). So the property is
-# restated in row terms, as sets a test can intersect, rather than kept as a sentence one scope
-# now breaks.
+# In row terms, `execute` can write `in_progress` (claim, from `approved` only) and `done`,
+# `failed`, `blocked`, or `resolved` (outcome). It can't write `approved`, `pending`, `deferred`,
+# `wontfix`, or `handed_off`. `outcome` isn't gated on `in_progress`: on any record with an
+# authorized executor it moves whatever status the record holds, exactly as the full credential's
+# call does (`app/api.py` `outcome`). So the property is restated as sets a test can intersect,
+# rather than kept as a sentence one scope now breaks.
 #
 # CORRECTED BY ADR-0019 INCREMENT 5a. This used to say no write here "touches the DECISION
 # lifecycle", and that became false the moment the proposal ingress started running the deploy
