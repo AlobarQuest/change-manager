@@ -112,7 +112,7 @@ rotated_by_sds = true
   repo = "orchestrator"
   ref = "scripts/run-inert-landing.sh"
   healthchecks_check = "sds-inert-landing"
-  note = "launchd com.devon.inert-landing hourly at :35; Keychain Claude/BWS_ACCESS_TOKEN_VPS_BACKUP (broad account); Healthchecks check sds-inert-landing"
+  note = "sds-lane-inert-landing container hourly at :37 America/New_York (--submit; fetched on every run); no lane BWS token: reads through the lane secrets broker sds-lane-secrets-broker (BWS account lane-secrets-broker); Healthchecks check sds-inert-landing"
 
   [[credential.consumer]]
   kind = "runtime-fetch"
