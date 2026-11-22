@@ -13,7 +13,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,7 +24,7 @@ from tests.bearer_settings import hashed
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "m2m_bearer_setting.json"
-CONTRACT_SHA256 = "caa7e5a797b3756a72f4e8013a59f1d0b81cbd0e9565ff1f054df8e7fd826238"
+CONTRACT_SHA256 = "7bdecabc59e45088cb72c99ac268adce3adfab83daec1a323d347462c33e3156"
 
 
 def _fixture() -> dict[str, Any]:
@@ -47,30 +47,12 @@ def test_the_fixture_is_unchanged() -> None:
     assert hashlib.sha256(FIXTURE.read_bytes()).hexdigest() == CONTRACT_SHA256
 
 
-# Variables this service reads that the shared fixture doesn't list yet. D-68 B (ADR-0059
-# increment 8, SDS HQ step 3j) added the change window's `execute` bearer here first. The exception
-# goes away in the orchestrator PR that adds the execute row to its rotation worker's VARIABLES
-# together with the paired fixture change, which updates the fixture and CONTRACT_SHA256 on both
-# sides.
-NOT_YET_IN_CONTRACT: Final = frozenset({"M2M_TOKEN_EXECUTE"})
-
-
 def test_the_variables_and_the_overlap_bound_are_this_services() -> None:
+    """Every variable this service reads is in the fixture with its scope, and nothing else is."""
     fixture = _fixture()
     ours = {variable: scope for _, scope, variable in bearers.VARIABLES}
-    contracted = {v: s for v, s in ours.items() if v not in NOT_YET_IN_CONTRACT}
-    assert fixture["variables"] == contracted
+    assert fixture["variables"] == ours
     assert fixture["max_previous_overlap_seconds"] == (bearers.MAX_PREVIOUS_OVERLAP.total_seconds())
-
-
-def test_the_variables_outside_the_contract_are_exactly_the_execute_bearer() -> None:
-    """The exception is named and can't grow, and every fixture variable is still one of ours."""
-    assert NOT_YET_IN_CONTRACT == {"M2M_TOKEN_EXECUTE"}
-    ours = {variable: scope for _, scope, variable in bearers.VARIABLES}
-    assert NOT_YET_IN_CONTRACT <= set(ours)
-    assert NOT_YET_IN_CONTRACT.isdisjoint(_fixture()["variables"])
-    for variable, scope in _fixture()["variables"].items():
-        assert ours.get(variable) == scope, variable
 
 
 @pytest.mark.parametrize(
