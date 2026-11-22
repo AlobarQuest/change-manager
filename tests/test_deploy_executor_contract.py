@@ -1,8 +1,9 @@
 """The 04:00 change-window executor's exact contract, pinned from this side.
 
-`com.devon.change-window` (a LaunchAgent on the mini) runs infraops-mcp-server's
-`change-mgr-cli run-window`, which makes THREE calls against an item
-(`run-window.ts` getApproved / claim / postOutcome; `security-executor.ts` likewise):
+The orchestrator's `sds-lane-change-window` VPS lane (`lane-run change-window --submit`,
+04:00 New York) runs infraops-mcp-server's `change-mgr-cli.js run-window`, which makes
+THREE calls against an item (`run-window.ts` getApproved / claim / postOutcome;
+`security-executor.ts` likewise):
 
     GET  /api/items?status=approved      (no source parameter)
     POST /api/items/{id}/claim

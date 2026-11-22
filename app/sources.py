@@ -13,8 +13,9 @@ guarded here against this one definition:
    guarantee — `SyncRequest.source` is caller-declared free text, so a batch could
    simply declare `source="deploy"` — hence both the structural exclusion in the sweep
    and the refusal in `reconcile`.
-2. The 04:00 change-window executor (`com.devon.change-window` →
-   `change-mgr-cli run-window` in infraops-mcp-server) reads
+2. The 04:00 New York change-window executor (the orchestrator's `sds-lane-change-window`
+   VPS lane, `lane-run change-window --submit`, running infraops-mcp-server's
+   `change-mgr-cli.js run-window`) reads
    `GET /api/items?status=approved` with no source filter and hands every item that is
    not `source == "security"` to an LLM agent holding production Coolify tools. That
    filter is a **denylist**, so a source it has never heard of is included by default.
