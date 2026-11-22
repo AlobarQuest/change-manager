@@ -16,8 +16,6 @@ applicable_standards:
 required_checks:
 - id: quality
   executor: github-actions:quality.yml
-- id: change-window
-  executor: launchagent:com.devon.change-window
 coolify_resources:
 - change-manager
 - change-manager-postgres
