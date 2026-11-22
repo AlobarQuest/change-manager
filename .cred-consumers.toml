@@ -231,3 +231,37 @@ rotated_by_sds = true
   ref = "scripts/run-deploy-watcher.sh"
   healthchecks_check = "sds-deploy-watcher"
   note = "sds-lane-deploy-watcher container hourly at :20 America/New_York (fetched on every run); lane BWS token DEPLOY_WATCHER_BWS_ACCESS_TOKEN (the lane's own account); Healthchecks check sds-deploy-watcher"
+
+# Minted by Devon at HQ gate G-88 2026-11-22 (D-68 B; the scope is change-manager #168):
+# BWS secret change-manager/M2M_TOKEN_EXECUTE in Rotation / Keepers, its sha256 entry written to
+# M2M_TOKEN_EXECUTE on both is_preview rows. Not yet handed to the rotation executor, and no
+# fingerprint is on record.
+[[credential]]
+id = "change-manager-execute-bearer"
+class = "change-manager-m2m-bearer"
+provider = "change-manager"
+provider_identity = "EXECUTE scope (M2M_TOKEN_EXECUTE)"
+bws_uuid = "aa7c76af-bd52-4796-9d13-b50a00e035de"
+created = "2026-11-22"
+disposition = "reissue"
+
+  [[credential.consumer]]
+  kind = "bws-secret"
+  uuid = "aa7c76af-bd52-4796-9d13-b50a00e035de"
+  note = "change-manager/M2M_TOKEN_EXECUTE (Rotation / Keepers) — keeper"
+
+  [[credential.consumer]]
+  kind = "coolify-env-hash"
+  instance = "prod"
+  resource_type = "application"
+  uuid = "re45tafypao3nly3qa9a79dp"
+  key = "M2M_TOKEN_EXECUTE"
+  entry = "execute"
+  note = "execute entry (sha256 only)"
+
+  [[credential.consumer]]
+  kind = "runtime-fetch"
+  repo = "orchestrator"
+  ref = "scripts/run-change-window.sh"
+  healthchecks_check = "Change Manager OPs Check"
+  note = "sds-lane-change-window container 04:00 America/New_York (cron 0 4 * * *; the schedule is off until the change-window cut-over; fetched on every pass, dry run included, which reads only this bearer); no lane BWS token: reads through the lane secrets broker sds-lane-secrets-broker (BWS account lane-secrets-broker, single-secret grant); Healthchecks check Change Manager OPs Check (slug operations-check)"
