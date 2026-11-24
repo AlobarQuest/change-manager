@@ -28,7 +28,6 @@ from app.deploy_policy import (
     CURRENT_VERSION,
     DEPENDABOT,
     DOCKER,
-    FORK_SECURE_UPSTREAM_SYNC,
     GITHUB_ACTIONS,
     current,
     inert_landing_dict,
@@ -36,7 +35,12 @@ from app.deploy_policy import (
     objections,
     policy_dict,
 )
-from app.deploy_policy_history import OCTO_UPSTREAM_SYNC, REGISTRY, policy_for
+from app.deploy_policy_history import (
+    FORK_SECURE_UPSTREAM_SYNC,
+    OCTO_UPSTREAM_SYNC,
+    REGISTRY,
+    policy_for,
+)
 from app.models import ChangeEvent, ChangeItem
 from app.schemas import DeployChangeIn
 from app.transitions import TransitionError, decide
@@ -1383,14 +1387,10 @@ def test_the_inert_lane_permits_the_update_bot_and_nobody_else():
     assert inert is not None
 
     assert DEPENDABOT == "dependabot[bot]"
-    # TWO since version 7, and still an EXACT set for the reason above. The second is the App
-    # that opens both forks' upstream-sync pull requests; the version-7 rationale records why it
-    # is that App and not `github-actions[bot]`, whose name would admit any workflow's output.
-    # Version 10 spells it by the login GitHub serves since the App was renamed on 2026-10-19.
-    assert FORK_SECURE_UPSTREAM_SYNC == "fork-secure-upstream-sync[bot]"
-    assert inert.permitted_authors == frozenset(
-        {"dependabot[bot]", "fork-secure-upstream-sync[bot]"}
-    )
+    # ONE again since version 16, and an EXACT set for the reason above. Versions 7 to 15 also
+    # permitted the App that opened the forks' upstream-sync pull requests; version 16 took the
+    # forks out of this population, and their sync App with them.
+    assert inert.permitted_authors == frozenset({"dependabot[bot]"})
 
 
 def test_a_declared_inert_population_PERMITS_SOMEBODY_AND_NOT_EVERYBODY():
@@ -1552,11 +1552,9 @@ def test_the_policy_route_serves_the_inert_population(client, m2m):
     assert declared is not None
     body = client.get("/api/deploy-policy", headers=m2m).json()
     assert body["version"] == CURRENT_VERSION
-    assert body["inert_landing"]["permitted_authors"] == [
-        "dependabot[bot]",
-        "fork-secure-upstream-sync[bot]",
-    ]
-    assert body["inert_landing"]["non_ecosystem_authors"] == ["fork-secure-upstream-sync[bot]"]
+    assert body["inert_landing"]["permitted_authors"] == ["dependabot[bot]"]
+    # Nobody is exempt from the ecosystem question since version 16, so the key is omitted.
+    assert "non_ecosystem_authors" not in body["inert_landing"]
     assert body["inert_landing"]["excluded_ecosystems"] == ["docker"]
     assert body["inert_landing"]["require_head_current_with_base"] is True
 
@@ -1568,7 +1566,7 @@ def test_the_policy_route_serves_the_inert_population(client, m2m):
     assert "ADR-0038" in body["inert_landing"]["rationale"]
     assert "alobarquest/factory-runner" in body["inert_landing"]["repositories"]
     assert body["inert_landing"]["repositories"] == sorted(declared.repositories)
-    # The population only grows: every repository version 12 admitted is still admitted.
+    # Every repository version 6 admitted is still admitted, and no fork is.
     assert {
         "alobarquest/orchestrator",
         "alobarquest/intent-packages",
@@ -1576,17 +1574,8 @@ def test_the_policy_route_serves_the_inert_population(client, m2m):
         "alobarquest/infraops-mcp-server",
         "alobarquest/project-standards",
         "alobarquest/factory-runner",
-        "alobarquest/rtk",
-        "alobarquest/claude-octopus",
-        "alobarquest/rea",
-        "alobarquest/n8n-as-code",
-        "alobarquest/n8n-manager",
     } <= set(body["inert_landing"]["repositories"])
-    assert "alobarquest/rtk" in body["inert_landing"]["repositories"]
-    assert "alobarquest/claude-octopus" in body["inert_landing"]["repositories"]
-    assert "alobarquest/rea" in body["inert_landing"]["repositories"]
-    assert "alobarquest/n8n-as-code" in body["inert_landing"]["repositories"]
-    assert "alobarquest/n8n-manager" in body["inert_landing"]["repositories"]
+    assert not set(body["inert_landing"]["repositories"]) & V16_REMOVED_FORKS
 
     # The deploying half of the same response, unchanged and beside it -- so a change that served
     # the new block by displacing the old one fails here rather than in production.
@@ -1730,17 +1719,23 @@ def test_version_nine_pins_this_repositorys_own_rollout_as_it_is_committed():
     assert blob == pin.blob_sha
 
 
-def test_the_exemption_names_the_sync_app_and_never_the_update_bot():
+def test_the_exemption_never_names_the_update_bot():
     """The bound the ecosystem exclusion places on Dependabot is untouched, which is the half a
     widening would quietly lose. Exempting the update bot would switch that bound off for the
-    population this lane was built for."""
+    population this lane was built for. Stated over every version that declares a block: versions
+    10 to 15 exempted the sync App, and version 16 exempts nobody."""
+    for policy in REGISTRY.values():
+        inert = policy.inert_landing
+        if inert is None:
+            continue
+        assert DEPENDABOT not in inert.non_ecosystem_authors, policy.version
+        # And every exempted author must be one the lane permits at all — an exemption for an
+        # author this lane never sees would be a permission nobody could exercise and nobody
+        # decided.
+        assert inert.non_ecosystem_authors <= inert.permitted_authors, policy.version
     inert = current().inert_landing
     assert inert is not None
-    assert inert.non_ecosystem_authors == frozenset({FORK_SECURE_UPSTREAM_SYNC})
-    assert DEPENDABOT not in inert.non_ecosystem_authors
-    # And every exempted author must be one the lane permits at all — an exemption for an author
-    # this lane never sees would be a permission nobody could exercise and nobody decided.
-    assert inert.non_ecosystem_authors <= inert.permitted_authors
+    assert inert.non_ecosystem_authors == frozenset()
 
 
 def test_a_retained_version_serves_the_bytes_it_always_served():
@@ -1865,6 +1860,65 @@ def test_version_twelve_adds_only_the_n8n_forks_to_the_inert_population():
     # The two populations stay disjoint.
     assert not twelve.repositories & v12.repositories
     assert "ADR-0038" in twelve.rationale
+
+
+# The forks version 16 took out of the inert lane (orchestrator ADR-0059 Amendment 16, open item 5).
+V16_REMOVED_FORKS = frozenset(
+    {
+        "alobarquest/rtk",
+        "alobarquest/claude-octopus",
+        "alobarquest/rea",
+        "alobarquest/n8n-as-code",
+        "alobarquest/n8n-manager",
+        "alobarquest/modern-web-guidance",
+    }
+)
+
+
+def test_version_sixteen_removes_only_the_forks_and_their_sync_author():
+    """Version 16's whole claim, asserted term by term against the one it supersedes.
+
+    Six forks and the one author only their pull requests had leave the inert lane, and nothing
+    else moves. A version that also dropped a non-fork repository, or widened anything while
+    wearing this version's rationale, would fail here.
+    """
+    v15, v16 = policy_for(15), policy_for(16)
+    assert v15 is not None and v16 is not None
+
+    # The deploying half: the SAME objects, because this version makes no statement about it.
+    assert v16.repositories == v15.repositories
+    assert v16.change_classes == v15.change_classes
+    assert v16.risks == v15.risks
+    assert v16.landing is v15.landing
+    assert v16.class_rollback_plans == v15.class_rollback_plans
+    for repository in (CHANGE_MANAGER, BRAIN):
+        assert v16.acceptance_criteria[repository] is v15.acceptance_criteria[repository]
+        assert v16.rollback_plans[repository] is v15.rollback_plans[repository]
+
+    fifteen, sixteen = v15.inert_landing, v16.inert_landing
+    assert fifteen is not None and sixteen is not None
+    assert V16_REMOVED_FORKS <= fifteen.repositories
+    assert sixteen.repositories == fifteen.repositories - V16_REMOVED_FORKS
+    assert "alobarquest/sds-canary" in sixteen.repositories
+    assert sixteen.permitted_authors == fifteen.permitted_authors - {FORK_SECURE_UPSTREAM_SYNC}
+    assert sixteen.permitted_authors == frozenset({DEPENDABOT})
+    assert sixteen.non_ecosystem_authors == frozenset()
+    assert sixteen.excluded_ecosystems == fifteen.excluded_ecosystems
+    assert sixteen.require_head_current_with_base == fifteen.require_head_current_with_base
+
+    # The served block omits the exemption key, which the landing party reads as nobody exempt.
+    served = inert_landing_dict(v16)
+    assert served is not None
+    assert "non_ecosystem_authors" not in served
+
+    # Each rationale names what it removes and why, so the withdrawal is readable where served.
+    for repository in V16_REMOVED_FORKS:
+        assert repository in v16.rationale
+        assert repository in sixteen.rationale
+    assert FORK_SECURE_UPSTREAM_SYNC in sixteen.rationale
+    assert "D-57" in sixteen.rationale and "Amendment 16" in sixteen.rationale
+    assert "ADR-0038" in sixteen.rationale
+    assert not sixteen.repositories & v16.repositories
 
 
 def _without_release_fields(policy) -> dict:
