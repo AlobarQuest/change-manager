@@ -3,7 +3,7 @@ Outcome: done
 # Build report: deploy policy version 16, the six forks leave the inert population
 
 - **PR:** AlobarQuest/change-manager#180 (not draft), branch `hq/inert-forks-out`, base `origin/main` `84a764d`.
-- **Head SHA:** `29277a1acc65a521e9e19ff8f2235ffd9fcd9585` (the code commit). This report is a separate commit on top of it.
+- **Head SHA:** the code commit is `29277a1acc65a521e9e19ff8f2235ffd9fcd9585`. The PR head is the later report commit; `gh pr view 180 --json headRefOid` gives its SHA. Earlier reports are tracked on `main` under `docs/superpowers/reports/`, so the report rides in the PR.
 - **Held:** not merged. An interactive session merges it in the same sitting as the member-record change on `/review`, because merging deploys change-mgr.alobar.net.
 
 ## What I built
@@ -51,6 +51,7 @@ I also compared version 16 to version 15 with `without_release_fields` and the i
 
 - `make check`: exit 0. ruff check passed, ruff format reported 99 files already formatted, pyright reported 0 errors, and pytest reported **751 passed** (1 third-party deprecation warning from anyio's pytest plugin).
 - Policy suites run separately (`test_deploy_policy`, `test_release_inert_repository`, `test_deploy_policy_revert`, `test_ratified_rollout_policy`): 178 passed.
+- PR CI (`Lint, type-check, and test`): pass on both runs. The job log reports 751 passed, which matches the local count.
 - `code-standards risk --repo .`: `normal`, so `vendor-review` wasn't required.
 - `/code-review` (medium, `origin/main...HEAD`): no bugs; four nits, covered under self-review.
 
@@ -85,12 +86,16 @@ I didn't change orchestrator.
 
 ## Readers outside this repository
 
-I read orchestrator `origin/main` at `e4bccdae` without checking it out or fetching. No reader beyond the membership check depends on the forks being in the population or on the sync author being permitted:
+I read orchestrator `origin/main` at `e4bccdae` without checking it out or fetching. Amendment 16 decision item 5's table lists every SDS lane or path that reads or acts on the forks. I used it as the list and read the code for each row that touches change-manager's population or authors:
 
-- **Inert lander and admission:** a fork's pull request is refused with `landing_repository_not_granted`, which is the accepted consequence Amendment 16 names.
-- **`landing_ledger/audit.py` `audit_inert_landing`:** re-evaluates a landing under the `policy_version` it recorded, so past fork landings still resolve against version 15, which is retained.
-- **`scripts/check_rollout_policy_ratification.py`:** reads only the deploying lane's ratified entries, which haven't changed.
-- **Fork-sync onboarding (`fork-sync onboard` step 10):** opens pull requests that add a fork to the population. That path ends under Amendment 16 open item 2 (task 3); it doesn't read the population as a precondition.
+- **Inert lander and admission** (`src/orchestrator/services/landing/inert_landing_policy.py`, the `_rules_from_body` parser in full): a fork's pull request is refused on its repository (`landing_repository_not_granted`), which is the accepted consequence the amendment names. An absent `non_ecosystem_authors` reads as the empty set.
+- **`src/landing_ledger/audit.py` `audit_inert_landing`** (lines 495-548, read in full): it doesn't read change-manager's policy at all. It checks only the stored row: that the landing names a policy version and that no recorded check failed. Past fork landings are unaffected.
+- **`src/bump_proposer/landing_policy.py` `parse`:** reads `permitted_authors` as a name set (line 235); a one-member set parses.
+- **`scripts/check_rollout_policy_ratification.py`:** reads only the contract's `policy_version` and the deploying lane's ratified entries, which haven't changed.
+- **`fork-sync onboard` step 10:** `src/fork_sync/` doesn't exist at `e4bccdae` (the chain has already left orchestrator), so no orchestrator code adds to or reads the population for onboarding.
+- **Membership check** (`src/membership_check/consistency.py` lines 100-140): the expected reader. It reports the disagreement this PR and the member-record change close together.
+
+I didn't open the other files the grep listed for `inert_landing` or `deploy_policy` (for example `inert_pr_merge.py`, `held_close.py`, and `rotation_worker/adapters/change_manager.py`). The amendment's table covers what they do for the forks, and none is named as depending on the forks' presence.
 
 None of the seven remaining repositories has a pull request from the sync App: `gh pr list --state all --author app/fork-secure-upstream-sync` returned 0 for each, and `app/octo-upstream-sync` also returned 0 for each. As a control, the same query on `AlobarQuest/rtk` returned 6, so the query works. The step-3 stop condition didn't trigger.
 
@@ -119,6 +124,7 @@ Design choice: I left `non_ecosystem_authors` at its default rather than writing
 - **Merge order is operational:** this PR's merge and the member-record change are meant to apply together. If this lands first, the membership check reports six grants that no landing path reaches until the record change applies. If the record change lands first, it reports six population entries with no grant. Either gap closes when the second change applies.
 - **Fork pull requests lose their lander:** once deployed, an open sync or Dependabot pull request on a fork waits for localops or a person. Devon dropped the condition that localops lands each fork first (2026-11-24).
 - **Generator follow-up:** `scripts/release_inert_repository.py`'s docstring and `_inert_rationale` still describe an addition. That's correct: the generator only makes additions. A future release made on top of version 16 inherits `permitted_authors={DEPENDABOT}`, so onboarding another fork through it would also need a hand-written author change. Amendment 16 open item 2 ends that path anyway.
+- **Standards coverage:** the task touched no concern outside the handoff's Standards section. It's a pure data and test change with no logging, error handling, auth, or secrets work. A grep of `*.md`, `*.yml`, and `*.toml` found no other place that pins version 15.
 - **Orchestrator remnants:** open item 6 (the inert path's fork branches) is orchestrator's and wasn't touched here.
 
 ## Standards followed
