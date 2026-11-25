@@ -87,8 +87,8 @@ _SOURCE_FAULTS = {
     ),
     "widen_new_version": (
         "policy",
-        "permitted_authors=frozenset({DEPENDABOT, FORK_SECURE_UPSTREAM_SYNC}),",
-        'permitted_authors=frozenset({DEPENDABOT, FORK_SECURE_UPSTREAM_SYNC, "x[bot]"}),',
+        "permitted_authors=frozenset({DEPENDABOT}),",
+        'permitted_authors=frozenset({DEPENDABOT, "x[bot]"}),',
     ),
     "add_second_repository": (
         "policy",
