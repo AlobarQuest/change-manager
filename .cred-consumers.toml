@@ -27,7 +27,7 @@ disposition = "reissue"
 # Handed to the rotation executor 2026-10-26 (intent-packages rotation-change-manager-full-bearer
 # rev 1, approved by Devon 2026-10-23).
 rotated_by_sds = true
-rotate_requested = "2026-10-26"
+rotate_requested = "2026-11-28"
 
   [[credential.consumer]]
   kind = "bws-secret"
@@ -77,6 +77,7 @@ disposition = "reissue"
 # Rotated by it 2026-10-20 to 2026-10-21 (units 590670f9 and 9bda584e): new value sha256
 # c19171f1; request cleared.
 rotated_by_sds = true
+rotate_requested = "2026-11-28"
 
   [[credential.consumer]]
   kind = "bws-secret"
@@ -155,6 +156,7 @@ disposition = "reissue"
 # Rotated by it 2026-10-20 to 2026-10-21 (units 3415eee0 and 448077d9): new value sha256
 # a32ce9a1; request cleared.
 rotated_by_sds = true
+rotate_requested = "2026-11-28"
 
   [[credential.consumer]]
   kind = "bws-secret"
@@ -210,6 +212,7 @@ disposition = "reissue"
 # rotation-change-manager-observe-bearer rev 1, approved by Devon 2026-10-19). Rotated by it
 # 2026-10-20 (units e1430e36 and d688930b): new value sha256 96ec0e3e; request cleared.
 rotated_by_sds = true
+rotate_requested = "2026-11-28"
 
   [[credential.consumer]]
   kind = "bws-secret"
