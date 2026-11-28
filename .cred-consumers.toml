@@ -247,6 +247,12 @@ provider_identity = "EXECUTE scope (M2M_TOKEN_EXECUTE)"
 bws_uuid = "aa7c76af-bd52-4796-9d13-b50a00e035de"
 created = "2026-11-22"
 disposition = "reissue"
+# Handed to the rotation executor 2026-11-28 under Devon's D-87 (B) (interactive session,
+# 2026-11-28), after HQ's D-84 condition 2 check found the execute scope writes nothing the
+# executor or the orchestrator trusts (no approved or decided_by write; claim moves approved to
+# in_progress only; require_executor refuses deploy and work records).
+rotated_by_sds = true
+rotate_requested = "2026-11-28"
 
   [[credential.consumer]]
   kind = "bws-secret"
